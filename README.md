@@ -1,4 +1,5 @@
-# ARJArchive
+# ARJ.swift
+## ARJArchive
 
 Swift library for reading ARJ archives.
 
