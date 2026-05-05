@@ -1,0 +1,130 @@
+OwnNet — Internet 4.0 Source License
+Version 1.0, May 2026
+
+Copyright (c) 2026 Serhii Merenkov / LIMITED LIABILITY COMPANY "Technologies"
+
+https://own-net.com/
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PREAMBLE
+
+This software is published in the spirit of the Open Internet 4.0 movement.
+The authors believe that digital tools must respect user sovereignty: devices
+must work without continuous corporate permission, data must be portable, and
+software must be auditable, repairable, and forkable.
+
+The source code is open for study, personal use, and community contribution.
+However, it may not be used to build systems that contradict these values.
+Using this software to create products with remote kill switches, forced
+vendor lock-in, or barriers to user ownership is explicitly prohibited.
+
+Full manifesto: https://own-net.com/
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DEFINITIONS
+
+"Software" means the source code, compiled binaries, documentation, and any
+associated files distributed under this license.
+
+"Derivative Work" means any work that incorporates, modifies, or is based
+upon the Software or any substantial portion of it.
+
+"Closed System" means any product, service, platform, or system that:
+  (a) implements remote kill switches or requires continuous third-party
+      authorization for basic operation of user-owned devices or software;
+  (b) locks user data in proprietary formats without providing a documented,
+      machine-readable export mechanism;
+  (c) prevents users from inspecting, modifying, or replacing the software
+      running on hardware they own;
+  (d) creates artificial interoperability barriers where open alternatives
+      exist, for the purpose of vendor lock-in;
+  (e) monitors or transmits user activity without explicit, informed, and
+      revocable user consent.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+GRANT OF RIGHTS
+
+Subject to the conditions in this license, the copyright holders grant you a
+worldwide, royalty-free, non-exclusive license to:
+
+  1. Use the Software for personal, educational, and non-commercial research
+     purposes.
+
+  2. Copy and distribute verbatim copies of the Software and this license.
+
+  3. Study and inspect the source code for any purpose.
+
+  4. Modify the Software and distribute Derivative Works, provided all
+     conditions of this license are satisfied.
+
+  5. Contribute modifications back to the original project.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CONDITIONS
+
+1. ATTRIBUTION
+
+   All copies and Derivative Works must:
+   - Retain this license file in full.
+   - Retain the original copyright notice.
+   - Include a visible attribution in any documentation or "About" section:
+     "Based on software by Serhii Merenkov / Technologies LLC (own-net.com)"
+
+2. OPEN INTERNET COMPATIBILITY
+
+   You may NOT use the Software, in whole or in part, as a component of a
+   Closed System as defined above. This restriction applies regardless of
+   whether the Closed System is commercial or non-commercial, open-source or
+   proprietary.
+
+   If you are uncertain whether your use qualifies, contact the authors at
+   mer.sergei@gmail.com before proceeding.
+
+3. COMMERCIAL USE
+
+   Commercial use — including incorporation into products sold, licensed,
+   or offered as a paid service — requires prior written permission from the
+   copyright holders.
+
+   Contact: mer.sergei@gmail.com
+
+4. SHAREALIKE
+
+   Any Derivative Work distributed to third parties must be released under
+   this license (OwnNet Source License 1.0) or a later version thereof. You
+   may not apply additional restrictions that limit recipients' rights beyond
+   what this license already allows.
+
+5. NO MISREPRESENTATION
+
+   You may not use the name "OwnNet", the OwnNet project name, or the names
+   of the copyright holders to endorse or promote Derivative Works without
+   prior written consent.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DISCLAIMER OF WARRANTIES
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+GOVERNING LAW
+
+This license is governed by the laws of Ukraine. Any disputes arising from or
+related to this license shall be subject to the jurisdiction of the courts of
+Ukraine.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+END OF OwnNet SOURCE LICENSE VERSION 1.0
