@@ -24,7 +24,10 @@ let package = Package(
         ),
         .testTarget(
             name: "ARJArchiveTests",
-            dependencies: ["ARJArchive"]
+            dependencies: ["ARJArchive"],
+            resources: [
+                .copy("Fixtures"),
+            ]
         ),
     ]
 )

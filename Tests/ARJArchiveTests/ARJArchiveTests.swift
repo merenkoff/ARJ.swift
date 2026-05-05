@@ -107,6 +107,33 @@ final class ARJArchiveTests: XCTestCase {
         XCTAssertEqual(Array(extracted ?? Data()), payload)
     }
 
+    func testFixtureMethod1To4Extraction() throws {
+        let expectedPayload = Data(
+            Array(repeating: Array("goarj-fixture-compatibility-block-0123456789\n".utf8), count: 400).flatMap { $0 }
+        )
+        let fixtures: [(name: String, method: ARJCompressionMethod)] = [
+            ("method1", .compressedMost),
+            ("method2", .compressed),
+            ("method3", .compressedFaster),
+            ("method4", .compressedFastest),
+        ]
+
+        for fixture in fixtures {
+            let url = try XCTUnwrap(
+                Bundle.module.url(forResource: fixture.name, withExtension: "arj", subdirectory: "Fixtures")
+            )
+            let archive = try ARJArchive(path: url.path)
+            let entries = try archive.entries()
+            XCTAssertEqual(entries.count, 1, "Unexpected entry count in \(fixture.name).arj")
+
+            let entry = try XCTUnwrap(entries.first)
+            XCTAssertEqual(entry.compressionMethod, fixture.method, "Unexpected method in \(fixture.name).arj")
+
+            let extracted = try archive.extract(entry: entry)
+            XCTAssertEqual(extracted, expectedPayload, "Payload mismatch in \(fixture.name).arj")
+        }
+    }
+
     private func minimalArchive() -> [UInt8] {
         var bytes: [UInt8] = []
         bytes += [0x60, 0xEA] // HEADER_ID
