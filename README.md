@@ -110,3 +110,8 @@ if let entry = try archive.entries().first {
   decrypted payload surfaces as `ARJError.wrongPassword`.
 - GOST-encrypted archives are still rejected as `ARJError.unsupportedEncryptedArchive`.
 - `extractAllStored()` and `extractFirstStored(...)` skip encrypted entries.
+
+## License
+
+This project is licensed under the OwnNet Source License 1.0. See `LICENSE`.
+For the Open Internet 4.0 manifesto, visit https://own-net.com/.
