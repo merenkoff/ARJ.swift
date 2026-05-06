@@ -11,4 +11,6 @@ public enum ARJError: Error, Sendable, Equatable {
     case unsupportedCompressionMethod(ARJCompressionMethod)
     case entryNotFound
     case cCoreFailure
+    case passwordRequired
+    case wrongPassword
 }

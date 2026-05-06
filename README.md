@@ -5,9 +5,12 @@ Swift library for reading ARJ archives.
 
 Current status:
 
-- Parse archive structure and list entries
+- Parse archive structure and list entries (with metadata: modified date, directory flag, normalized path, compression ratio)
+- Read archive comment from the main header
 - Extract stored (uncompressed) entries
-- Detect unsupported encrypted/compressed entries via typed errors
+- Decompress methods 1...4 via embedded C decoder
+- Decrypt XOR-encrypted entries when a password is supplied
+- Typed errors for missing/wrong password and unsupported features
 
 ## Installation (Swift Package Manager)
 
@@ -23,6 +26,16 @@ let entries = try archive.entries()
 
 for entry in entries {
     print(entry.name, entry.compressionMethod, entry.originalSize)
+    print("modified:", entry.modified)
+    print("isDirectory:", entry.isDirectory)
+    print("normalizedPath:", entry.normalizedPath)
+    if let ratio = entry.compressionRatio {
+        print("ratio:", ratio)
+    }
+}
+
+if let comment = archive.archiveComment {
+    print("archive comment:", comment)
 }
 ```
 
@@ -46,6 +59,23 @@ import ARJArchive
 
 let archive = try ARJArchive(path: "/path/to/archive.arj")
 let data = try archive.extract(named: "hello.txt")
+```
+
+Extract an encrypted entry with a password:
+
+```swift
+import ARJArchive
+
+let archive = try ARJArchive(path: "/path/to/archive.arj")
+
+do {
+    let data = try archive.extract(named: "secret.txt", password: "hunter2")
+    // Use decrypted data.
+} catch ARJError.passwordRequired {
+    // Entry is encrypted but no password was supplied.
+} catch ARJError.wrongPassword {
+    // Password did not match (CRC32 of decrypted output mismatched).
+}
 ```
 
 Extract all stored entries:
@@ -73,6 +103,10 @@ if let entry = try archive.entries().first {
 
 ## Notes
 
-- Only `stored` entries are currently extractable.
-- Other ARJ methods will throw `ARJError.unsupportedCompressionMethod`.
-- Encrypted entries will throw `ARJError.unsupportedEncryptedArchive`.
+- Compression methods 0...4 are supported via the bundled C decoder.
+- Methods outside that range throw `ARJError.unsupportedCompressionMethod`.
+- XOR-style password protection is supported via the `password:` argument on
+  `extract(entry:password:)` / `extract(named:password:)`. CRC32 mismatch on a
+  decrypted payload surfaces as `ARJError.wrongPassword`.
+- GOST-encrypted archives are still rejected as `ARJError.unsupportedEncryptedArchive`.
+- `extractAllStored()` and `extractFirstStored(...)` skip encrypted entries.
