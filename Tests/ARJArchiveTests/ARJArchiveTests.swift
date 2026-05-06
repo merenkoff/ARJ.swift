@@ -134,6 +134,34 @@ final class ARJArchiveTests: XCTestCase {
         }
     }
 
+    func testFixtureMultiFileExtractNamed() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "multi_file", withExtension: "arj", subdirectory: "Fixtures"))
+        let archive = try ARJArchive(path: url.path)
+        let entries = try archive.entries()
+        XCTAssertEqual(entries.count, 3)
+
+        let extractedBeta = try archive.extract(named: "beta.bin")
+        let extractedGamma = try archive.extract(named: "gamma.dat")
+        XCTAssertEqual(extractedBeta.count, 26)
+        XCTAssertEqual(extractedGamma.count, 48)
+    }
+
+    func testFixtureMixedMethodsExtractAllStoredAndNamed() throws {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "mixed_methods", withExtension: "arj", subdirectory: "Fixtures"))
+        let archive = try ARJArchive(path: url.path)
+
+        // This fixture has only compressed entries, so extractAllStored should return none.
+        let stored = try archive.extractAllStored()
+        XCTAssertTrue(stored.isEmpty)
+
+        // But extract(named:) should work for each method1...4 entry.
+        let names = ["method1.txt", "method2.txt", "method3.txt", "method4.txt"]
+        for name in names {
+            let data = try archive.extract(named: name)
+            XCTAssertEqual(data.count, 48)
+        }
+    }
+
     private func minimalArchive() -> [UInt8] {
         var bytes: [UInt8] = []
         bytes += [0x60, 0xEA] // HEADER_ID
