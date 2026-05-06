@@ -37,6 +37,32 @@ final class ARJArchiveTests: XCTestCase {
         XCTAssertEqual(Array(extracted), payload)
     }
 
+    func testStoredEntryWrongCRCThrowsCRCMismatch() throws {
+        let payload = Array("crc check".utf8)
+        let wrongCrc: UInt32 = 0xDEAD_BEEF
+        let archive = ARJArchive(
+            data: Data(
+                minimalArchive(
+                    entries: [
+                        ARJFixtureEntry(
+                            fileName: "badcrc.txt",
+                            payload: payload,
+                            method: 0,
+                            fileType: 0,
+                            hostOS: 0,
+                            flags: 0,
+                            crc32: wrongCrc,
+                        ),
+                    ]
+                )
+            )
+        )
+        let entry = try XCTUnwrap(try archive.entries().first)
+        XCTAssertThrowsError(try archive.extract(entry: entry)) { error in
+            XCTAssertEqual(error as? ARJError, .crcMismatch)
+        }
+    }
+
     func testExtractAllStored() throws {
         let first = ARJFixtureEntry(
             fileName: "first.txt",
@@ -458,6 +484,13 @@ final class ARJArchiveTests: XCTestCase {
         bytes.removeLast(4) // remove end marker, we'll append file headers before it
 
         for entry in entries {
+            let effectiveCRC: UInt32 = {
+                if entry.crc32 != 0 { return entry.crc32 }
+                if entry.method == 0, entry.flags & 0x01 == 0 {
+                    return CRC32.compute(entry.payload)
+                }
+                return 0
+            }()
             let fileHeader = minimalFileHeader(
                 fileName: entry.fileName,
                 compressedSize: UInt32(entry.payload.count),
@@ -466,7 +499,7 @@ final class ARJArchiveTests: XCTestCase {
                 fileType: entry.fileType,
                 hostOS: entry.hostOS,
                 flags: entry.flags,
-                crc32: entry.crc32,
+                crc32: effectiveCRC,
                 modifiedDOS: entry.modifiedDOS,
                 passwordModifier: entry.passwordModifier
             )

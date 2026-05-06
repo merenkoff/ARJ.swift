@@ -13,4 +13,6 @@ public enum ARJError: Error, Sendable, Equatable {
     case cCoreFailure
     case passwordRequired
     case wrongPassword
+    /// Decoded payload CRC32 does not match the header (non-encrypted entries).
+    case crcMismatch
 }

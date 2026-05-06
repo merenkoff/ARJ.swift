@@ -11,10 +11,43 @@ Current status:
 - Decompress methods 1...4 via embedded C decoder
 - Decrypt XOR-encrypted entries when a password is supplied
 - Typed errors for missing/wrong password and unsupported features
+- CRC mismatch on decoded (non-encrypted) payloads surfaces as `ARJError.crcMismatch`
+
+## Command-line tool (`arj`, macOS)
+
+The package builds an **ARJ-style** executable (`arj`) that wraps the library. It accepts classic one-letter commands and many common ARJ switches; internally these are normalized and parsed with [swift-argument-parser](https://github.com/apple/swift-argument-parser).
+
+Build and run:
+
+```bash
+swift build -c release
+.build/release/arj --help          # overview
+.build/release/arj l archive.arj   # list
+.build/release/arj l --help        # long options for `l` (after preprocessing)
+```
+
+Examples:
+
+```bash
+arj l archive.arj
+arj v archive.arj
+arj t archive.arj
+arj x archive.arj -htout/
+arj e archive.arj '*.txt' -gsecret
+arj w archive.arj 'search text'
+```
+
+| Command | Status |
+|--------|--------|
+| **l** list, **v** verbose list, **t** test, **e** extract (flat), **x** extract (paths), **p** print, **s** sample, **w** search, **c** comment (show) | Implemented (read-only) |
+| **a** add, **d** delete, **u** update, **f** freshen, **m** move, **g** garble, **r** remove-paths, **n** rename, **o** order, **b** batch, **i** integrity, **j** join, **k** backup, **q** recover, **y** copy, **ac**/**cc**/**dc** chapters | Stubs (exit code 2, message explains write support is pending) |
+| **c** with **-z** (set comment file) | Stub (write) |
+
+Process exit codes **0…12** follow classic ARJ errorlevels where applicable.
 
 ## Installation (Swift Package Manager)
 
-Add this package URL to your `Package.swift` dependencies.
+Add this package URL to your `Package.swift` dependencies. The library product is `ARJArchive`; the executable product is `arj`.
 
 ## Usage
 
@@ -75,6 +108,8 @@ do {
     // Entry is encrypted but no password was supplied.
 } catch ARJError.wrongPassword {
     // Password did not match (CRC32 of decrypted output mismatched).
+} catch ARJError.crcMismatch {
+    // Decoded data CRC32 did not match the header (non-encrypted entry).
 }
 ```
 

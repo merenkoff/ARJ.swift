@@ -140,8 +140,7 @@ public struct ARJArchive: Sendable {
             if parsed.entry.isEncrypted {
                 throw ARJError.wrongPassword
             }
-            // For non-encrypted entries we keep current behaviour and return the data;
-            // CRC integrity validation is out of scope for this revision.
+            throw ARJError.crcMismatch
         }
 
         return output
