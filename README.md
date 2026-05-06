@@ -1,7 +1,7 @@
 # ARJ.swift
 ## ARJArchive
 
-Swift library for reading ARJ archives.
+Swift [library](#library-usage) for reading ARJ archives. And Command-line tool (`arj`, macOS) 
 
 Current status:
 
@@ -45,11 +45,20 @@ arj w archive.arj 'search text'
 
 Process exit codes **0…12** follow classic ARJ errorlevels where applicable.
 
-## Installation (Swift Package Manager)
+## Installation
 
-Add this package URL to your `Package.swift` dependencies. The library product is `ARJArchive`; the executable product is `arj`.
+### Homebrew (prebuilt CLI)
 
-## Usage
+```bash
+brew install merenkoff/arj/arj
+```
+
+### Swift Package Manager
+
+Add this package URL to your `Package.swift` dependencies.  
+The library product is `ARJArchive`; the executable product is `arj`.
+
+## Library Usage
 
 ```swift
 import ARJArchive
