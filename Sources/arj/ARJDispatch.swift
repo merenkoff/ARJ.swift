@@ -45,10 +45,10 @@ enum ARJDispatch {
             var cmd = try CommentCommand.parseAsRoot(parseArguments)
             try cmd.run()
         case "add":
-            var cmd = try AddStubCommand.parseAsRoot(parseArguments)
+            var cmd = try AddCommand.parseAsRoot(parseArguments)
             try cmd.run()
         case "delete":
-            var cmd = try DeleteStubCommand.parseAsRoot(parseArguments)
+            var cmd = try DeleteCommand.parseAsRoot(parseArguments)
             try cmd.run()
         case "update":
             var cmd = try UpdateStubCommand.parseAsRoot(parseArguments)
@@ -124,9 +124,9 @@ enum ARJDispatch {
         case "comment":
             return CommentCommand.helpMessage(for: CommentCommand.self)
         case "add":
-            return AddStubCommand.helpMessage(for: AddStubCommand.self)
+            return AddCommand.helpMessage(for: AddCommand.self)
         case "delete":
-            return DeleteStubCommand.helpMessage(for: DeleteStubCommand.self)
+            return DeleteCommand.helpMessage(for: DeleteCommand.self)
         case "update":
             return UpdateStubCommand.helpMessage(for: UpdateStubCommand.self)
         case "freshen":

@@ -9,24 +9,122 @@ private func runWriteStub(letter: String, name: String, options: ArchiveOperatio
     )
 }
 
-struct AddStubCommand: ParsableCommand {
+struct AddCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "add",
-        abstract: "Add files to archive (ARJ: a) — not yet implemented",
-        discussion: "Write support for this command is planned for Stage 4 of development."
+        abstract: "Add files to archive (ARJ: a)",
+        discussion: "Minimal write-mode implementation (Stage 5, iteration 1)."
     )
     @OptionGroup var options: ArchiveOperationOptions
-    func run() throws { try runWriteStub(letter: "a", name: "add", options: options) }
+
+    func run() throws {
+        try options.validateArchiveArgument()
+        let base = URL(fileURLWithPath: options.baseDirectory ?? FileManager.default.currentDirectoryPath, isDirectory: true)
+        let inputs = try collectAddInputs(baseDirectory: base, masks: options.masks, recursive: options.recursive, excludes: options.excludes)
+        if inputs.isEmpty {
+            throw ARJCLIError.exit(.warning, message: "no files matched for add")
+        }
+        let result = try applyWriterChanges(
+            options: options,
+            changes: [.add(inputs)]
+        )
+        print("Added: \(result.entriesAdded), Skipped: 0")
+    }
+
+    private func collectAddInputs(
+        baseDirectory: URL,
+        masks: [String],
+        recursive: Bool,
+        excludes: [String]
+    ) throws -> [ARJAddInput] {
+        let fm = FileManager.default
+        var candidates: [URL] = []
+        let masksToUse = masks.isEmpty ? ["*"] : masks
+
+        if recursive {
+            let enumerator = fm.enumerator(at: baseDirectory, includingPropertiesForKeys: [.isRegularFileKey])
+            while let item = enumerator?.nextObject() as? URL {
+                let values = try item.resourceValues(forKeys: [.isRegularFileKey])
+                if values.isRegularFile == true {
+                    candidates.append(item)
+                }
+            }
+        } else {
+            for name in try fm.contentsOfDirectory(atPath: baseDirectory.path) {
+                let url = baseDirectory.appendingPathComponent(name)
+                var isDir: ObjCBool = false
+                if fm.fileExists(atPath: url.path, isDirectory: &isDir), !isDir.boolValue {
+                    candidates.append(url)
+                }
+            }
+        }
+
+        var result: [ARJAddInput] = []
+        for url in candidates {
+            let relative = url.path.replacingOccurrences(of: baseDirectory.path + "/", with: "")
+                .replacingOccurrences(of: "\\", with: "/")
+            let matchesMask = masksToUse.contains { ARJGlob.matches(relative, pattern: $0) || ARJGlob.matches(url.lastPathComponent, pattern: $0) }
+            let excluded = excludes.contains { ARJGlob.matches(relative, pattern: $0) || ARJGlob.matches(url.lastPathComponent, pattern: $0) }
+            if matchesMask && !excluded {
+                result.append(ARJAddInput(sourceURL: url, archivePath: relative))
+            }
+        }
+        return result
+    }
 }
 
-struct DeleteStubCommand: ParsableCommand {
+struct DeleteCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "delete",
-        abstract: "Delete files from archive (ARJ: d) — not yet implemented",
-        discussion: "Write support for this command is planned for Stage 4 of development."
+        abstract: "Delete files from archive (ARJ: d)",
+        discussion: "Minimal write-mode implementation (Stage 5, iteration 1)."
     )
     @OptionGroup var options: ArchiveOperationOptions
-    func run() throws { try runWriteStub(letter: "d", name: "delete", options: options) }
+    func run() throws {
+        try options.validateArchiveArgument()
+        var positionalMasks = options.masks
+        if let base = options.baseDirectory, !base.isEmpty {
+            positionalMasks.insert(base, at: 0)
+        }
+        let masks = try ARJFilter.resolvedMasks(masks: positionalMasks, listfiles: options.listfiles)
+        if masks.isEmpty {
+            throw ARJCLIError.exit(.userParameterError, message: "delete requires at least one mask")
+        }
+        let result = try applyWriterChanges(
+            options: options,
+            changes: [.delete(ARJDeleteSelector(masks: masks, excludes: options.excludes))]
+        )
+        if result.entriesDeleted == 0 {
+            throw ARJCLIError.exit(.warning, message: "no entries matched delete mask(s)")
+        }
+        print("Deleted: \(result.entriesDeleted), Not matched: 0")
+    }
+}
+
+func applyWriterChanges(
+    options: ArchiveOperationOptions,
+    changes: [ARJWriterChange]
+) throws -> ARJWriterResult {
+    let inputURL = URL(fileURLWithPath: options.archive)
+    let tempURL = inputURL.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).tmp.arj")
+    let result = try ARJWriter.apply(
+        inputArchivePath: inputURL.path,
+        outputArchivePath: tempURL.path,
+        changes: changes,
+        password: options.password,
+        options: ARJWriterOptions(compressionMethod: options.compressionMethod)
+    )
+    try FileManager.default.removeItemIfExists(at: inputURL)
+    try FileManager.default.moveItem(at: tempURL, to: inputURL)
+    return result
+}
+
+extension FileManager {
+    func removeItemIfExists(at url: URL) throws {
+        if fileExists(atPath: url.path) {
+            try removeItem(at: url)
+        }
+    }
 }
 
 struct UpdateStubCommand: ParsableCommand {

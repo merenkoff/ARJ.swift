@@ -20,10 +20,10 @@
 - [x] Покращити `w` (search) для текстових патернів/кодувань.
 - [x] Узгодити `c` (show comment) з очікуваним ARJ-стилем виводу.
 
-## Stage 4: Write Roadmap Preparation (без реалізації writer)
-- [ ] Специфікувати мінімальний `ARJWriter` API (дизайн-док).
-- [ ] Виписати контракт для перших write-команд (`a`, `d`, `c-write`).
-- [ ] Підготувати fixture-план для write-тестів.
+## Stage 4: Write Roadmap Preparation (без реалізації writer) ✅ COMPLETE
+- [x] Специфікувати мінімальний `ARJWriter` API (дизайн-док).
+- [x] Виписати контракт для перших write-команд (`a`, `d`, `c-write`).
+- [x] Підготувати fixture-план для write-тестів.
 
 ---
 

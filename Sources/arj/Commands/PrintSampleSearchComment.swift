@@ -184,11 +184,18 @@ struct CommentCommand: ParsableCommand {
 
     func run() throws {
         try options.validateArchiveArgument()
-        if options.commentFile != nil {
-            throw ARJCLIError.exit(
-                .fatalError,
-                message: "command 'c' (comment) with -z is not implemented yet (write support is pending)"
+        if let commentFile = options.commentFile {
+            let commentText = try String(contentsOfFile: commentFile, encoding: .utf8)
+            let result = try applyWriterChanges(
+                options: options,
+                changes: [.setArchiveComment(commentText)]
             )
+            if result.commentChanged {
+                print("Archive comment updated")
+            } else {
+                print("Archive comment unchanged")
+            }
+            return
         }
 
         let archive = try ARJArchive(path: options.archive)

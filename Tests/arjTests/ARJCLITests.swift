@@ -49,12 +49,25 @@ final class ARJCLITests: XCTestCase {
         XCTAssertEqual(status, 9)
     }
 
-    func testAddStubExits2() throws {
+    func testAddAddsFileToArchive() throws {
         let bin = try binaryURL()
-        let fixture = try fixtureURL("method1.arj")
-        let (_, err, status) = try run(bin, arguments: ["a", fixture.path, "*", "-r"])
-        XCTAssertEqual(status, 2)
-        XCTAssertTrue(err.contains("not implemented"), err)
+        let sourceArchive = try fixtureURL("method1.arj")
+        let archiveCopy = FileManager.default.temporaryDirectory.appendingPathComponent("add-\(UUID().uuidString).arj")
+        try FileManager.default.copyItem(at: sourceArchive, to: archiveCopy)
+        defer { try? FileManager.default.removeItem(at: archiveCopy) }
+
+        let inputDir = FileManager.default.temporaryDirectory.appendingPathComponent("add-input-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: inputDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: inputDir) }
+        let fileURL = inputDir.appendingPathComponent("new.txt")
+        try Data("new payload".utf8).write(to: fileURL)
+
+        let (_, err, status) = try run(bin, arguments: ["a", archiveCopy.path, inputDir.path, "*.txt", "-r"])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+
+        let (listOut, _, listStatus) = try run(bin, arguments: ["l", archiveCopy.path])
+        XCTAssertEqual(listStatus, 0)
+        XCTAssertTrue(listOut.contains("new.txt"), listOut)
     }
 
     func testEncryptedWithoutPasswordExits3() throws {
@@ -75,16 +88,38 @@ final class ARJCLITests: XCTestCase {
         XCTAssertEqual(status, 3)
     }
 
-    func testCommentWithZFileIsWriteStubExits2() throws {
+    func testCommentWithZFileUpdatesComment() throws {
         let bin = try binaryURL()
-        let fixture = try fixtureURL("method1.arj")
+        let sourceArchive = try fixtureURL("method1.arj")
+        let fixture = FileManager.default.temporaryDirectory.appendingPathComponent("comment-\(UUID().uuidString).arj")
+        try FileManager.default.copyItem(at: sourceArchive, to: fixture)
+        defer { try? FileManager.default.removeItem(at: fixture) }
         let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("comment-\(UUID().uuidString).txt")
         try Data("new comment".utf8).write(to: tempFile)
         defer { try? FileManager.default.removeItem(at: tempFile) }
 
-        let (_, err, status) = try run(bin, arguments: ["c", fixture.path, "-z\(tempFile.path)"])
-        XCTAssertEqual(status, 2)
-        XCTAssertTrue(err.contains("not implemented"), err)
+        let (writeOut, err, status) = try run(bin, arguments: ["c", fixture.path, "-z\(tempFile.path)"])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        XCTAssertTrue(writeOut.contains("updated") || writeOut.contains("unchanged"), writeOut)
+
+        let (readOut, _, readStatus) = try run(bin, arguments: ["c", fixture.path])
+        XCTAssertEqual(readStatus, 0)
+        XCTAssertTrue(readOut.contains("new comment"), readOut)
+    }
+
+    func testDeleteRemovesMatchingEntries() throws {
+        let bin = try binaryURL()
+        let sourceArchive = try fixtureURL("multi_file.arj")
+        let archiveCopy = FileManager.default.temporaryDirectory.appendingPathComponent("delete-\(UUID().uuidString).arj")
+        try FileManager.default.copyItem(at: sourceArchive, to: archiveCopy)
+        defer { try? FileManager.default.removeItem(at: archiveCopy) }
+
+        let (_, err, status) = try run(bin, arguments: ["d", archiveCopy.path, "*.bin"])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+
+        let (out, _, listStatus) = try run(bin, arguments: ["l", archiveCopy.path])
+        XCTAssertEqual(listStatus, 0)
+        XCTAssertFalse(out.contains("beta.bin"), out)
     }
 
     func testListAcceptsWorkDirSwitchAsNoOp() throws {
