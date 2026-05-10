@@ -57,6 +57,57 @@ final class ARJCLITests: XCTestCase {
         XCTAssertTrue(err.contains("not implemented"), err)
     }
 
+    func testEncryptedWithoutPasswordExits3() throws {
+        let bin = try binaryURL()
+        let archiveURL = try makeEncryptedFixture(password: "secret", payloadText: "top secret")
+        defer { try? FileManager.default.removeItem(at: archiveURL) }
+
+        let (_, _, status) = try run(bin, arguments: ["t", archiveURL.path])
+        XCTAssertEqual(status, 3)
+    }
+
+    func testEncryptedWrongPasswordExits3() throws {
+        let bin = try binaryURL()
+        let archiveURL = try makeEncryptedFixture(password: "secret", payloadText: "top secret")
+        defer { try? FileManager.default.removeItem(at: archiveURL) }
+
+        let (_, _, status) = try run(bin, arguments: ["t", archiveURL.path, "-gwrong"])
+        XCTAssertEqual(status, 3)
+    }
+
+    func testCommentWithZFileIsWriteStubExits2() throws {
+        let bin = try binaryURL()
+        let fixture = try fixtureURL("method1.arj")
+        let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("comment-\(UUID().uuidString).txt")
+        try Data("new comment".utf8).write(to: tempFile)
+        defer { try? FileManager.default.removeItem(at: tempFile) }
+
+        let (_, err, status) = try run(bin, arguments: ["c", fixture.path, "-z\(tempFile.path)"])
+        XCTAssertEqual(status, 2)
+        XCTAssertTrue(err.contains("not implemented"), err)
+    }
+
+    func testListAcceptsWorkDirSwitchAsNoOp() throws {
+        let bin = try binaryURL()
+        let fixture = try fixtureURL("multi_file.arj")
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let (out, err, status) = try run(bin, arguments: ["l", fixture.path, "-w\(tmp.path)"])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        XCTAssertTrue(out.contains("alpha.txt"), out)
+    }
+
+    func testVerboseListMatchesSnapshot() throws {
+        let bin = try binaryURL()
+        let fixture = try fixtureURL("multi_file.arj")
+        let snapshot = try String(contentsOf: verboseSnapshotURL(), encoding: .utf8)
+        let (out, err, status) = try run(bin, arguments: ["v", fixture.path])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        XCTAssertEqual(normalizeNewlines(out), normalizeNewlines(snapshot))
+    }
+
     // MARK: - Helpers
 
     private func packageRoot() -> URL {
@@ -87,6 +138,12 @@ final class ARJCLITests: XCTestCase {
         return url
     }
 
+    private func verboseSnapshotURL() -> URL {
+        packageRoot()
+            .appendingPathComponent("Tests/arjTests/Snapshots")
+            .appendingPathComponent("verbose_multi_file.txt")
+    }
+
     private func run(_ executable: URL, arguments: [String]) throws -> (String, String, Int32) {
         let process = Process()
         process.executableURL = executable
@@ -104,4 +161,170 @@ final class ARJCLITests: XCTestCase {
         let err = String(data: errData, encoding: .utf8) ?? ""
         return (out, err, process.terminationStatus)
     }
+
+    private func makeEncryptedFixture(password: String, payloadText: String) throws -> URL {
+        let payload = [UInt8](payloadText.utf8)
+        let modifier: UInt8 = 0x42
+        let encryptedPayload = xorEncrypt(payload, password: password, modifier: modifier)
+        let crc = crc32(payload)
+
+        let bytes = minimalArchive(
+            entries: [
+                FixtureEntry(
+                    fileName: "secret.txt",
+                    payload: encryptedPayload,
+                    method: 0,
+                    fileType: 0,
+                    hostOS: 0,
+                    flags: 0x01,
+                    crc32: crc,
+                    modifiedDOS: 0,
+                    passwordModifier: modifier,
+                    originalSize: UInt32(payload.count)
+                ),
+            ]
+        )
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("enc-\(UUID().uuidString).arj")
+        try Data(bytes).write(to: url)
+        return url
+    }
+
+    private func xorEncrypt(_ payload: [UInt8], password: String, modifier: UInt8) -> [UInt8] {
+        let passwordBytes = Array(password.utf8)
+        var output = [UInt8](repeating: 0, count: payload.count)
+        for index in 0..<payload.count {
+            let key = modifier &+ passwordBytes[index % passwordBytes.count]
+            output[index] = payload[index] ^ key
+        }
+        return output
+    }
+
+    private func minimalArchive(entries: [FixtureEntry]) -> [UInt8] {
+        var bytes: [UInt8] = []
+        bytes += [0x60, 0xEA]
+        bytes += [0x1E, 0x00]
+        bytes += Array(repeating: 0, count: 30)
+        bytes += [0x00, 0x00, 0x00, 0x00]
+        bytes += [0x00, 0x00]
+
+        for entry in entries {
+            let fileHeader = minimalFileHeader(
+                fileName: entry.fileName,
+                compressedSize: UInt32(entry.payload.count),
+                originalSize: entry.originalSize,
+                method: entry.method,
+                fileType: entry.fileType,
+                hostOS: entry.hostOS,
+                flags: entry.flags,
+                crc32: entry.crc32,
+                modifiedDOS: entry.modifiedDOS,
+                passwordModifier: entry.passwordModifier
+            )
+
+            bytes += [0x60, 0xEA]
+            bytes += littleEndianWord(UInt16(fileHeader.count))
+            bytes += fileHeader
+            bytes += [0x00, 0x00, 0x00, 0x00]
+            bytes += [0x00, 0x00]
+            bytes += entry.payload
+        }
+
+        bytes += [0x60, 0xEA]
+        bytes += [0x00, 0x00]
+        return bytes
+    }
+
+    private func minimalFileHeader(
+        fileName: String,
+        compressedSize: UInt32,
+        originalSize: UInt32,
+        method: UInt8,
+        fileType: UInt8,
+        hostOS: UInt8,
+        flags: UInt8,
+        crc32: UInt32,
+        modifiedDOS: UInt32,
+        passwordModifier: UInt8
+    ) -> [UInt8] {
+        var fixed = Array(repeating: UInt8(0), count: 30)
+        fixed[0] = 30
+        fixed[1] = 11
+        fixed[2] = 1
+        fixed[3] = hostOS
+        fixed[4] = flags
+        fixed[5] = method
+        fixed[6] = fileType
+        fixed[7] = passwordModifier
+
+        fixed[8] = UInt8(truncatingIfNeeded: modifiedDOS)
+        fixed[9] = UInt8(truncatingIfNeeded: modifiedDOS >> 8)
+        fixed[10] = UInt8(truncatingIfNeeded: modifiedDOS >> 16)
+        fixed[11] = UInt8(truncatingIfNeeded: modifiedDOS >> 24)
+
+        fixed[12] = UInt8(truncatingIfNeeded: compressedSize)
+        fixed[13] = UInt8(truncatingIfNeeded: compressedSize >> 8)
+        fixed[14] = UInt8(truncatingIfNeeded: compressedSize >> 16)
+        fixed[15] = UInt8(truncatingIfNeeded: compressedSize >> 24)
+
+        fixed[16] = UInt8(truncatingIfNeeded: originalSize)
+        fixed[17] = UInt8(truncatingIfNeeded: originalSize >> 8)
+        fixed[18] = UInt8(truncatingIfNeeded: originalSize >> 16)
+        fixed[19] = UInt8(truncatingIfNeeded: originalSize >> 24)
+
+        fixed[20] = UInt8(truncatingIfNeeded: crc32)
+        fixed[21] = UInt8(truncatingIfNeeded: crc32 >> 8)
+        fixed[22] = UInt8(truncatingIfNeeded: crc32 >> 16)
+        fixed[23] = UInt8(truncatingIfNeeded: crc32 >> 24)
+
+        var strings = Array(fileName.utf8)
+        strings.append(0)
+        strings.append(0)
+        return fixed + strings
+    }
+
+    private func littleEndianWord(_ value: UInt16) -> [UInt8] {
+        [UInt8(value & 0x00FF), UInt8((value >> 8) & 0x00FF)]
+    }
+
+    private func crc32(_ bytes: [UInt8]) -> UInt32 {
+        let polynomial: UInt32 = 0xEDB8_8320
+        var table = [UInt32](repeating: 0, count: 256)
+        for index in 0..<256 {
+            var value = UInt32(index)
+            for _ in 0..<8 {
+                if (value & 1) != 0 {
+                    value = (value >> 1) ^ polynomial
+                } else {
+                    value >>= 1
+                }
+            }
+            table[index] = value
+        }
+
+        var crc: UInt32 = 0xFFFF_FFFF
+        for byte in bytes {
+            let lookup = Int((crc ^ UInt32(byte)) & 0xFF)
+            crc = (crc >> 8) ^ table[lookup]
+        }
+        return crc ^ 0xFFFF_FFFF
+    }
+
+    private func normalizeNewlines(_ text: String) -> String {
+        text.replacingOccurrences(of: "\r\n", with: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private struct FixtureEntry {
+    let fileName: String
+    let payload: [UInt8]
+    let method: UInt8
+    let fileType: UInt8
+    let hostOS: UInt8
+    let flags: UInt8
+    let crc32: UInt32
+    let modifiedDOS: UInt32
+    let passwordModifier: UInt8
+    let originalSize: UInt32
 }

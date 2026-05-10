@@ -45,7 +45,10 @@ let package = Package(
         ),
         .testTarget(
             name: "arjTests",
-            dependencies: ["arj"]
+            dependencies: ["arj"],
+            resources: [
+                .copy("Snapshots"),
+            ]
         ),
     ]
 )

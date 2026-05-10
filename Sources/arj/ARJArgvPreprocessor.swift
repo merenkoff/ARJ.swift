@@ -176,7 +176,7 @@ enum ARJArgvPreprocessor {
             return ["--target-dir", path]
         case t.hasPrefix("-g"):
             return ["--password", String(t.dropFirst(2))]
-        case t.hasPrefix("-w"), t.hasPrefix("-z"):
+        case t.hasPrefix("-w") || t.hasPrefix("-z"):
             let path = String(t.dropFirst(2))
             guard !path.isEmpty else { throw PreprocessError.badSwitch(token) }
             let flag = t.hasPrefix("-w") ? "--work-dir" : "--comment-file"
