@@ -3,6 +3,7 @@ import Foundation
 
 struct ARJWriterOptions {
     var compressionMethod: Int?
+    var replaceExistingEntries: Bool
 }
 
 struct ARJAddInput {
@@ -23,6 +24,8 @@ enum ARJWriterChange {
 
 struct ARJWriterResult {
     var entriesAdded: Int
+    var entriesReplaced: Int
+    var entriesSkipped: Int
     var entriesDeleted: Int
     var commentChanged: Bool
 }
@@ -53,6 +56,8 @@ enum ARJWriter {
         var comment = archive.archiveComment
 
         var added = 0
+        var replaced = 0
+        var skipped = 0
         var deleted = 0
         var commentChanged = false
 
@@ -63,7 +68,12 @@ enum ARJWriter {
                     let data = try Data(contentsOf: input.sourceURL)
                     let normalized = normalizeArchivePath(input.archivePath)
                     if let idx = snapshot.firstIndex(where: { $0.name == normalized }) {
-                        snapshot[idx] = StoredEntry(name: normalized, data: data)
+                        if options.replaceExistingEntries {
+                            snapshot[idx] = StoredEntry(name: normalized, data: data)
+                            replaced += 1
+                        } else {
+                            skipped += 1
+                        }
                     } else {
                         snapshot.append(StoredEntry(name: normalized, data: data))
                         added += 1
@@ -94,7 +104,13 @@ enum ARJWriter {
         let bytes = serializeStoredArchive(entries: snapshot, comment: comment)
         try Data(bytes).write(to: URL(fileURLWithPath: outputArchivePath), options: .atomic)
 
-        return ARJWriterResult(entriesAdded: added, entriesDeleted: deleted, commentChanged: commentChanged)
+        return ARJWriterResult(
+            entriesAdded: added,
+            entriesReplaced: replaced,
+            entriesSkipped: skipped,
+            entriesDeleted: deleted,
+            commentChanged: commentChanged
+        )
     }
 
     private struct StoredEntry {

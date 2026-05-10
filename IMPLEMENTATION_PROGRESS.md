@@ -13,11 +13,11 @@
 
 ## Iteration 2 (next)
 
-- [ ] Улучшить `a` для mask/listfile edge-cases.
-- [ ] Уточнить overwrite/model поведения.
-- [ ] Добавить больше fixture-driven write тестов.
+- [x] Улучшить `a` для mask/listfile edge-cases.
+- [x] Уточнить overwrite/model поведения.
+- [x] Добавить больше fixture-driven write тестов.
 
 ## Iteration 3 (later)
 
-- [ ] Подготовить расширение под `u/f` поверх тех же примитивов.
-- [ ] Тонкая ARJ-совместимость по сообщениям и exit-level нюансам.
+- [x] Подготовить расширение под `u/f` поверх тех же примитивов.
+- [x] Тонкая ARJ-совместимость по сообщениям и exit-level нюансам.

@@ -70,6 +70,54 @@ final class ARJCLITests: XCTestCase {
         XCTAssertTrue(listOut.contains("new.txt"), listOut)
     }
 
+    func testAddSupportsListfileMasks() throws {
+        let bin = try binaryURL()
+        let sourceArchive = try fixtureURL("method1.arj")
+        let archiveCopy = FileManager.default.temporaryDirectory.appendingPathComponent("add-list-\(UUID().uuidString).arj")
+        try FileManager.default.copyItem(at: sourceArchive, to: archiveCopy)
+        defer { try? FileManager.default.removeItem(at: archiveCopy) }
+
+        let inputDir = FileManager.default.temporaryDirectory.appendingPathComponent("add-list-input-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: inputDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: inputDir) }
+        try Data("alpha".utf8).write(to: inputDir.appendingPathComponent("alpha.txt"))
+        try Data("beta".utf8).write(to: inputDir.appendingPathComponent("beta.bin"))
+
+        let listfile = FileManager.default.temporaryDirectory.appendingPathComponent("masks-\(UUID().uuidString).txt")
+        try "*.txt\n".write(to: listfile, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: listfile) }
+
+        let (_, err, status) = try run(bin, arguments: ["a", archiveCopy.path, inputDir.path, "!\(listfile.path)", "-r"])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+
+        let (listOut, _, listStatus) = try run(bin, arguments: ["l", archiveCopy.path])
+        XCTAssertEqual(listStatus, 0)
+        XCTAssertTrue(listOut.contains("alpha.txt"), listOut)
+        XCTAssertFalse(listOut.contains("beta.bin"), listOut)
+    }
+
+    func testAddOverwritePromptSkipsExistingEntry() throws {
+        let bin = try binaryURL()
+        let sourceArchive = try fixtureURL("method1.arj")
+        let archiveCopy = FileManager.default.temporaryDirectory.appendingPathComponent("add-overwrite-\(UUID().uuidString).arj")
+        try FileManager.default.copyItem(at: sourceArchive, to: archiveCopy)
+        defer { try? FileManager.default.removeItem(at: archiveCopy) }
+
+        let inputDir = FileManager.default.temporaryDirectory.appendingPathComponent("add-overwrite-input-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: inputDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: inputDir) }
+        try Data("replaced content".utf8).write(to: inputDir.appendingPathComponent("compat_payload.bin"))
+
+        let (out, err, status) = try run(bin, arguments: ["a", archiveCopy.path, inputDir.path, "compat_payload.bin", "-o"])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        XCTAssertTrue(out.contains("Skipped: 1"), out)
+
+        let (listOut, _, listStatus) = try run(bin, arguments: ["l", archiveCopy.path])
+        XCTAssertEqual(listStatus, 0)
+        XCTAssertTrue(listOut.contains("compat_payload.bin"), listOut)
+        XCTAssertTrue(listOut.contains("18000"), listOut)
+    }
+
     func testEncryptedWithoutPasswordExits3() throws {
         let bin = try binaryURL()
         let archiveURL = try makeEncryptedFixture(password: "secret", payloadText: "top secret")
@@ -120,6 +168,80 @@ final class ARJCLITests: XCTestCase {
         let (out, _, listStatus) = try run(bin, arguments: ["l", archiveCopy.path])
         XCTAssertEqual(listStatus, 0)
         XCTAssertFalse(out.contains("beta.bin"), out)
+    }
+
+    func testUpdateReplacesAndAdds() throws {
+        let bin = try binaryURL()
+        let original = [UInt8]("old".utf8)
+        let archive = try makeFixtureArchive(
+            entries: [
+                FixtureEntry(
+                    fileName: "file.txt",
+                    payload: original,
+                    method: 0,
+                    fileType: 0,
+                    hostOS: 0,
+                    flags: 0,
+                    crc32: crc32(original),
+                    modifiedDOS: 0,
+                    passwordModifier: 0,
+                    originalSize: UInt32(original.count)
+                ),
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: archive) }
+
+        let inputDir = FileManager.default.temporaryDirectory.appendingPathComponent("update-input-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: inputDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: inputDir) }
+        try Data("new".utf8).write(to: inputDir.appendingPathComponent("file.txt"))
+        try Data("added".utf8).write(to: inputDir.appendingPathComponent("extra.txt"))
+
+        let (_, err, status) = try run(bin, arguments: ["u", archive.path, inputDir.path, "*.txt", "-r"])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+
+        let (listOut, _, listStatus) = try run(bin, arguments: ["l", archive.path])
+        XCTAssertEqual(listStatus, 0)
+        XCTAssertTrue(listOut.contains("file.txt\t3"), listOut)
+        XCTAssertTrue(listOut.contains("extra.txt"), listOut)
+    }
+
+    func testFreshenUpdatesOnlyExistingEntries() throws {
+        let bin = try binaryURL()
+        let original = [UInt8]("old".utf8)
+        let archive = try makeFixtureArchive(
+            entries: [
+                FixtureEntry(
+                    fileName: "file.txt",
+                    payload: original,
+                    method: 0,
+                    fileType: 0,
+                    hostOS: 0,
+                    flags: 0,
+                    crc32: crc32(original),
+                    modifiedDOS: 0,
+                    passwordModifier: 0,
+                    originalSize: UInt32(original.count)
+                ),
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: archive) }
+
+        let inputDir = FileManager.default.temporaryDirectory.appendingPathComponent("freshen-input-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: inputDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: inputDir) }
+        try Data("fresh".utf8).write(to: inputDir.appendingPathComponent("file.txt"))
+        try Data("new-file".utf8).write(to: inputDir.appendingPathComponent("extra.txt"))
+
+        let (_, err, status) = try run(bin, arguments: ["f", archive.path, inputDir.path, "*.txt", "-r"])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+
+        let (fileOut, _, fileStatus) = try run(bin, arguments: ["p", archive.path, "file.txt"])
+        XCTAssertEqual(fileStatus, 0)
+        XCTAssertEqual(fileOut, "fresh")
+        let (listOut, _, listStatus) = try run(bin, arguments: ["l", archive.path])
+        XCTAssertEqual(listStatus, 0)
+        XCTAssertFalse(listOut.contains("extra.txt"), listOut)
     }
 
     func testListAcceptsWorkDirSwitchAsNoOp() throws {

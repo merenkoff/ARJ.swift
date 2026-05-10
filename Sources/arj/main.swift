@@ -42,7 +42,7 @@ private func printARJHelp(executable: String) {
     let name = URL(fileURLWithPath: executable).lastPathComponent
     print(
         """
-        \(name) — ARJ-style CLI for ARJ.swift (read commands; write = stubs)
+        \(name) — ARJ-style CLI for ARJ.swift (read commands + partial write support)
 
         Usage: \(name) <command> [-switches] <archive[.arj]> [base_dir] [files...]
 
@@ -54,9 +54,15 @@ private func printARJHelp(executable: String) {
                         p print     Print file contents to stdout
                         s sample    Show sample/first file
                         w search    Search for text pattern
-                        c comment   Show archive comment
+                        c comment   Show archive comment (or set with -z<file>)
 
-        Write (stubs):  a d u f m g r n o b i j k q y  ac cc dc
+        Write (implemented): a add      Add files
+                             d delete   Delete by masks
+                             u update   Update existing + add missing
+                             f freshen  Update only existing entries
+                             c -z<file> Set archive comment
+
+        Write (stubs):      m g r n o b i j k q y  ac cc dc
 
         Common switches:
           -g<pass>          Password for encrypted archives
