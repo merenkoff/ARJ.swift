@@ -1,58 +1,107 @@
 <p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=0:0d1117,50:1a1a2e,100:0f3460&height=180&section=header&text=ARJ.swift&fontSize=56&fontColor=58a6ff&fontAlignY=38&desc=Swift%20library%20for%20reading%20ARJ%20archives&descAlignY=58&descSize=16&descColor=8b949e&animation=fadeIn" />
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=0:0d1117,35:161b22,70:1f6feb,100:58a6ff&height=220&section=header&text=ARJ.swift&fontSize=58&fontColor=ffffff&fontAlignY=38&desc=Modern%20ARJ%20archive%20toolkit%20for%20Swift&descAlignY=60&descSize=18&descColor=c9d1d9&animation=fadeIn" />
+  <b>Read · Extract · Inspect · Test · Automate</b>
 </p>
-
+<p align="center">
+  Native Swift library and ARJ-compatible CLI for working with classic ARJ archives on modern systems.
+</p>
 <p align="center">
   <img src="https://img.shields.io/badge/Swift-5.9+-F05138?style=flat-square&logo=swift&logoColor=white" />
-  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-lightgrey?style=flat-square&logo=apple&logoColor=white" />
-  <img src="https://img.shields.io/badge/SPM-compatible-brightgreen?style=flat-square&logo=swift&logoColor=white" />
-  <img src="https://img.shields.io/badge/License-OwnNet%201.0-blue?style=flat-square" />
-  <img src="https://img.shields.io/github/stars/merenkoff/ARJ.swift?style=flat-square&color=58a6ff" />
+  <img src="https://img.shields.io/badge/macOS-supported-black?style=flat-square&logo=apple" />
+  <img src="https://img.shields.io/badge/Linux-supported-2ea043?style=flat-square&logo=linux" />
+  <img src="https://img.shields.io/badge/SPM-compatible-brightgreen?style=flat-square" />
+  <img src="https://img.shields.io/badge/CLI-ARJ%20compatible-1f6feb?style=flat-square" />
+  <img src="https://img.shields.io/badge/License-OwnNet%201.0-8b5cf6?style=flat-square" />
 </p>
-
 <p align="center">
-  <a href="#-installation">Installation</a> &nbsp;·&nbsp;
-  <a href="#-library-usage">Library Usage</a> &nbsp;·&nbsp;
-  <a href="#%EF%B8%8F-command-line-tool">CLI Tool</a> &nbsp;·&nbsp;
-  <a href="#-notes">Notes</a>
+  <a href="#-features">Features</a> •
+  <a href="#-installation">Installation</a> •
+  <a href="#-cli-usage">CLI Usage</a> •
+  <a href="#-library-usage">Library Usage</a> •
+  <a href="#-testing">Testing</a> •
+  <a href="#-roadmap">Roadmap</a>
 </p>
 
 ---
 
-## What is ARJ.swift?
+Why ARJ.swift?
 
-A Swift library for reading and extracting **ARJ archives** — the classic compression format from the DOS era. Includes a command-line tool (`arj`) for macOS.
+ARJ archives still appear in:
 
-```
-Parse · List · Extract · Decompress · Decrypt
-```
+* retro software collections
+* DOS backup systems
+* abandonware distributions
+* industrial software environments
+* digital preservation workflows
+* legacy archive migrations
 
-### ✅ Current status
+ARJ.swift brings native ARJ support to modern Swift environments with:
 
-| Feature | Status |
-|---|---|
-| Parse archive structure & list entries | ✅ |
-| Archive comment from main header | ✅ |
-| Extract stored (uncompressed) entries | ✅ |
-| Decompress methods 1…4 via C decoder | ✅ |
-| XOR-encrypted entries (password) | ✅ |
-| Typed errors (missing/wrong password, unsupported) | ✅ |
-| CRC mismatch on decoded payloads | ✅ |
-| Write operations (add, delete, update…) | 🚧 Stubs |
+* clean Swift APIs
+* modern CLI ergonomics
+* archive inspection tools
+* extraction and validation support
+* compatibility-focused behavior
 
 ---
 
-## 📦 Installation
+✨ Features
 
-### Homebrew (prebuilt CLI)
+Archive Support
+
+* ✅ Parse ARJ archive structures
+* ✅ Read archive comments
+* ✅ Compression methods 0...4
+* ✅ CRC32 validation
+* ✅ XOR-encrypted archives
+* ✅ Typed Swift errors
+* ✅ Entry metadata and path normalization
+* 🚧 Write/update support planned
+
+Command-Line Tool
+
+* ✅ List archive contents
+* ✅ Verbose archive inspection
+* ✅ Extract with path modes
+* ✅ Wildcard filtering
+* ✅ Search inside archives
+* ✅ Integrity testing
+* ✅ Password support
+* ✅ ARJ-style commands and switches
+
+Developer Experience
+
+* ✅ Swift Package Manager support
+* ✅ Structured error handling
+* ✅ CLI preprocessing layer
+* ✅ Comprehensive tests
+* ✅ Cross-platform support
+* ✅ Native Swift APIs
+
+---
+
+🏗 Architecture
+
+ARJ.swift consists of multiple layers:
+
+Component    Description
+ARJArchive    Native Swift archive API
+arj    Classic ARJ-compatible CLI frontend
+Embedded C decoder    Legacy decompression backend
+Argument preprocessing layer    Normalizes ARJ-style CLI syntax
+Extraction engine    Handles paths, filters, validation
+
+---
+
+📦 Installation
+
+Homebrew
 
 ```bash
 brew install merenkoff/arj/arj
 ```
 
-### Swift Package Manager
-
-Add to your `Package.swift`:
+Swift Package Manager
 
 ```swift
 dependencies: [
@@ -60,20 +109,187 @@ dependencies: [
 ]
 ```
 
-The library product is `ARJArchive`; the executable product is `arj`.
+Products:
+
+* ARJArchive — Swift library
+* arj — command-line executable
+
+Build From Source
+
+```bash
+git clone https://github.com/merenkoff/ARJ.swift
+cd ARJ.swift
+swift build -c release
+```
+
+Binary location:
+
+```bash
+.build/release/arj
+```
 
 ---
 
-## 📖 Library Usage
+🖥 CLI Usage
 
-### Basic — list entries
+Build & Run
+
+```bash
+swift build -c release
+.build/release/arj --help
+```
+
+---
+
+Listing Archives
+
+```bash
+# List archive contents
+arj l backup.arj
+# Verbose listing
+arj v backup.arj
+# Exclude files
+arj l backup.arj -x*.bak
+# Use include list
+arj l backup.arj !include.txt
+```
+
+---
+
+Extracting Files
+
+```bash
+# Extract preserving paths
+arj x backup.arj -htout/
+# Flat extraction
+arj e backup.arj -htout/
+# Keep full paths
+arj x backup.arj -htout/ -p
+# Keep relative paths
+arj x backup.arj -htout/ -p1
+# Strip all paths
+arj x backup.arj -htout/ -e
+```
+
+---
+
+Search & Validation
+
+```bash
+# Test archive integrity
+arj t backup.arj
+# Search inside archive
+arj w backup.arj "config"
+# Extract encrypted files
+arj e backup.arj '*.txt' -gsecret
+```
+
+---
+
+Advanced Filtering
+
+```bash
+# Multiple excludes
+arj l archive.arj -x*.bin -x*.tmp
+# Extract with filters
+arj x archive.arj -ht/tmp -x*.bak -y
+```
+
+---
+
+📚 Command Reference
+
+Command    Status    Description
+l    ✅    List files
+v    ✅    Verbose list
+t    ✅    Test integrity
+e    ✅    Extract flat
+x    ✅    Extract with paths
+p    ✅    Print file contents
+s    ✅    View with pager
+w    ✅    Search text
+c    ✅    Show archive comment
+a    🚧    Add files
+d    🚧    Delete files
+u    🚧    Update files
+f    🚧    Freshen files
+m    🚧    Move files
+g    🚧    Garble/encrypt
+r    🚧    Remove paths
+n    🚧    Rename files
+o    🚧    Reorder files
+b    🚧    Batch mode
+i    🚧    Integrity data
+j    🚧    Join split archives
+k    🚧    Backup cleanup
+q    🚧    Recover archive
+y    🚧    Copy/verify archive
+
+Write-mode commands currently return exit code 2.
+
+---
+
+⚙️ CLI Features
+
+Filtering
+
+-x<mask>     Exclude by wildcard mask
+!<file>      Read masks/files from list
+
+Examples:
+
+-x*.bin
+-x*.tmp
+-xfile?.dat
+
+Supports:
+
+* wildcard patterns
+* multiple exclude masks
+* include lists
+* comment lines in list files
+
+---
+
+Extraction Modes
+
+Option    Description
+-ht<dir>    Target extraction directory
+-p    Preserve absolute paths
+-p1    Preserve relative paths
+-e    Strip all paths
+-y    Skip overwrite prompts
+-_    Lowercase filenames
+
+---
+
+Other Options
+
+Option    Description
+-g<password>    Password for encrypted archives
+-w<dir>    Work directory
+-i    Disable progress indicator
+-o    Prompt before overwrite
+-r    Recursive processing
+-jt    CRC test mode
+
+---
+
+📖 Library Usage
+
+Open Archive
 
 ```swift
 import ARJArchive
-
 let archive = try ARJArchive(path: "/path/to/archive.arj")
 let entries = try archive.entries()
+```
 
+---
+
+List Entries
+
+```swift
 for entry in entries {
     print(entry.name, entry.compressionMethod, entry.originalSize)
     print("modified:", entry.modified)
@@ -83,30 +299,49 @@ for entry in entries {
         print("ratio:", ratio)
     }
 }
+```
 
+---
+
+Read Archive Comment
+
+```swift
 if let comment = archive.archiveComment {
     print("archive comment:", comment)
 }
 ```
 
-### Extract by entry or name
+---
+
+Extract by Entry
 
 ```swift
-// By entry
-let entry = try archive.entries().first { $0.name == "hello.txt" }
+let entry = try archive.entries().first {
+    $0.name == "hello.txt"
+}
 if let entry {
     let data = try archive.extract(entry: entry)
 }
+```
 
-// By name
+---
+
+Extract by Name
+
+```swift
 let data = try archive.extract(named: "hello.txt")
 ```
 
-### Extract encrypted entries
+---
+
+Password-Protected Entries
 
 ```swift
 do {
-    let data = try archive.extract(named: "secret.txt", password: "hunter2")
+    let data = try archive.extract(
+        named: "secret.txt",
+        password: "hunter2"
+    )
 } catch ARJError.passwordRequired {
     // Entry is encrypted but no password was supplied
 } catch ARJError.wrongPassword {
@@ -116,14 +351,12 @@ do {
 }
 ```
 
-### Bulk extraction
+---
+
+Bulk Extraction
 
 ```swift
-// Extract all stored entries
 let files = try archive.extractAllStored()
-// files["name.ext"] -> Data
-
-// Soft lookup — no throw
 let maybeData = archive.extractFirstStored(named: "hello.txt")
 
 if let entry = try archive.entries().first {
@@ -133,60 +366,97 @@ if let entry = try archive.entries().first {
 
 ---
 
-## 🖥️ Command-line tool
+🧪 Testing
 
-The package builds an **ARJ-style** executable (`arj`) that wraps the library. It accepts classic one-letter commands and many common ARJ switches, parsed internally with [swift-argument-parser](https://github.com/apple/swift-argument-parser).
-
-```bash
-swift build -c release
-.build/release/arj --help          # overview
-.build/release/arj l archive.arj   # list
-.build/release/arj l --help        # long options for `l`
-```
-
-### Examples
+Run all tests:
 
 ```bash
-arj l archive.arj                  # list entries
-arj v archive.arj                  # verbose list
-arj t archive.arj                  # test integrity
-arj x archive.arj -htout/          # extract with paths
-arj e archive.arj '*.txt' -gsecret # extract with password
-arj w archive.arj 'search text'    # search inside archive
+swift test
 ```
 
-### Supported commands
+Run CLI-specific tests:
 
-| Command | Status |
+```bash
+swift test --filter ARJCLITests
+```
+
+Build and test:
+
+```bash
+swift build && swift test
+```
+
+---
+
+Test Coverage
+
+* CLI preprocessing
+* Wildcard filtering
+* Path handling modes
+* Password validation
+* Encryption handling
+* Exit code compatibility
+* Help and usage validation
+* Extraction logic
+
+---
+
+🚦 Exit Codes
+
+| Code | Meaning |
 |---|---|
-| `l` list · `v` verbose list · `t` test · `e` extract (flat) · `x` extract (paths) · `p` print · `s` sample · `w` search · `c` comment | ✅ Implemented |
-| `a` add · `d` delete · `u` update · `f` freshen · `m` move and others | 🚧 Stubs (exit code 2) |
+| 0 | Success |
+| 2 | User error / not implemented (write commands) |
+| 3 | Password error / encryption issues |
+| 6 | File not found |
+| 7 | File I/O error |
+| 9 | Not an ARJ archive |
+| 11 | User aborted |
 
-Process exit codes **0…12** follow classic ARJ errorlevels where applicable.
-
----
-
-## 📝 Notes
-
-- Compression methods **0…4** are supported via the bundled C decoder
-- Methods outside that range throw `ARJError.unsupportedCompressionMethod`
-- **XOR-style** password protection is supported via the `password:` argument
-- **GOST-encrypted** archives are rejected as `ARJError.unsupportedEncryptedArchive`
-- `extractAllStored()` and `extractFirstStored(...)` skip encrypted entries
+Compatible with classic ARJ errorlevels where applicable.
 
 ---
 
-## License
+🗺 Roadmap
 
-Licensed under the **OwnNet Source License 1.0**. See `LICENSE` for details.  
-For the Open Internet 4.0 manifesto, visit [own-net.com](https://own-net.com/).
+Completed
+
+* ✅ Stage 1 — Stabilization
+* ✅ Stage 2 — CLI correctness & DX
+* ✅ Stage 3 — Read-mode feature parity
+* ✅ Stage 4 — Write architecture preparation
+
+In Progress
+
+* 🚧 Archive creation
+* 🚧 Update/delete operations
+* 🚧 Advanced write workflows
+* 🚧 Archive mutation support
 
 ---
+
+📝 Notes
+
+* Compression methods 0...4 are supported via the embedded C decoder
+* Unsupported compression methods throw ARJError.unsupportedCompressionMethod
+* XOR-style encryption is supported via the password: argument
+* GOST-encrypted archives are rejected as ARJError.unsupportedEncryptedArchive
+* extractAllStored() skips encrypted entries
+
+---
+
+📄 License
 
 <p align="center">
-  Made with ♥ by <a href="https://github.com/merenkoff">merenkoff</a>
+Licensed under the OwnNet Source License 1.0. See LICENSE for details.<br>
+Open Internet 4.0 manifesto: https://own-net.com/
 </p>
 
+---
+
 <p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=0:0f3460,50:1a1a2e,100:0d1117&height=100&section=footer" />
+  Built with ♥ by <a href="https://github.com/merenkoff">merenkoff</a>
+</p>
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=0:58a6ff,50:1f6feb,100:0d1117&height=120&section=footer" />
 </p>
