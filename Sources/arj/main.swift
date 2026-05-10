@@ -46,14 +46,56 @@ private func printARJHelp(executable: String) {
 
         Usage: \(name) <command> [-switches] <archive[.arj]> [base_dir] [files...]
 
-        Read commands:  l list   v verbose   t test   e extract (flat)   x extract (paths)
-                        p print  s sample    w search  c comment (show)
+        Read commands:  l list      List files in archive
+                        v verbose   Verbose list with full details
+                        t test      Test integrity
+                        e extract   Extract files (flat, no directories)
+                        x extract   Extract files (preserving paths)
+                        p print     Print file contents to stdout
+                        s sample    Show sample/first file
+                        w search    Search for text pattern
+                        c comment   Show archive comment
 
         Write (stubs):  a d u f m g r n o b i j k q y  ac cc dc
 
+        Common switches:
+          -g<pass>          Password for encrypted archives
+          -ht<dir>          Target directory for extraction (-e/-x)
+          -w<dir>           Work directory
+          -y                Assume yes (don't prompt)
+          -x<mask>          Exclude files matching mask (glob: *.bin, file?.dat)
+          !<file>           Read file/mask list from file (one per line)
+          -p                Keep full paths when extracting
+          -p1               Keep relative paths
+          -e                Strip all paths (extract to target dir only)
+          -r                Recurse into subdirectories
+          -_                Convert names to lowercase
+          -o                Prompt before overwriting
+          -i                No progress indicator
+          -m0..4            Compression method (for write commands)
+          -jt               CRC test mode
+          -z<file>          Comment file (for write commands)
+
         Use \(name) <command> --help for per-command options (long flags after preprocessing).
 
-        Exit codes 0…12 match classic ARJ errorlevels where applicable.
+        Exit codes:
+          0    Success
+          2    User error / not implemented
+          3    Password error / encryption issues
+          6    File not found
+          7    File I/O error
+          9    Not an ARJ archive
+          11   User aborted
+          Others see classic ARJ errorlevels
+
+        Examples:
+          \(name) l archive.arj                    # List all files
+          \(name) l archive.arj -x*.bin           # List except .bin files
+          \(name) l archive.arj !listfile.txt     # List only files in listfile.txt
+          \(name) x archive.arj -ht/tmp -y        # Extract to /tmp without prompts
+          \(name) x archive.arj -x*.bak -x*.tmp   # Extract excluding .bak and .tmp
+          \(name) t archive.arj -gsecret          # Test with password
+          \(name) v archive.arj | less            # Verbose list (pipe to pager)
         """
     )
 }

@@ -5,7 +5,18 @@ import Foundation
 struct ListCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "list",
-        abstract: "List files in an archive (ARJ: l)"
+        abstract: "List archive contents (ARJ: l)",
+        discussion: """
+        List all files in archive, optionally filtered by masks or listfile.
+        
+        Usage: arj l <archive> [base_dir] [files/masks...]
+        
+        Examples:
+          arj l archive.arj                    # List all
+          arj l archive.arj -x*.bak            # Exclude *.bak files
+          arj l archive.arj !filter.txt        # Only files listed in filter.txt
+          arj l archive.arj -g<password>       # List encrypted archive
+        """
     )
 
     @OptionGroup var options: ArchiveOperationOptions

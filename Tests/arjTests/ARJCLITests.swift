@@ -108,6 +108,295 @@ final class ARJCLITests: XCTestCase {
         XCTAssertEqual(normalizeNewlines(out), normalizeNewlines(snapshot))
     }
 
+    // MARK: - Tests for !listfile and -x<mask> filtering
+
+    func testListfileBasicExclusion() throws {
+        let bin = try binaryURL()
+        let fixture = try fixtureURL("multi_file.arj")
+        
+        // Create a temporary listfile with one filename
+        let listfileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("list-\(UUID().uuidString).txt")
+        try "alpha.txt\n".write(to: listfileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: listfileURL) }
+        
+        let (out, err, status) = try run(
+            bin,
+            arguments: ["l", fixture.path, "!\(listfileURL.path)"]
+        )
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        XCTAssertTrue(out.contains("alpha.txt"), "Should list alpha.txt from listfile")
+        XCTAssertFalse(out.contains("beta.bin"), "Should not list beta.bin (not in listfile)")
+        XCTAssertFalse(out.contains("gamma.dat"), "Should not list gamma.dat (not in listfile)")
+    }
+
+    func testListfileMultipleEntries() throws {
+        let bin = try binaryURL()
+        let fixture = try fixtureURL("multi_file.arj")
+        
+        let listfileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("list-\(UUID().uuidString).txt")
+        try "alpha.txt\nbeta.bin\n".write(to: listfileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: listfileURL) }
+        
+        let (out, err, status) = try run(
+            bin,
+            arguments: ["l", fixture.path, "!\(listfileURL.path)"]
+        )
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        XCTAssertTrue(out.contains("alpha.txt"))
+        XCTAssertTrue(out.contains("beta.bin"))
+        XCTAssertFalse(out.contains("gamma.dat"), "Should not list gamma.dat")
+    }
+
+    func testListfileMissingFileExits() throws {
+        let bin = try binaryURL()
+        let fixture = try fixtureURL("multi_file.arj")
+        let nonExistentListfile = "/tmp/nonexistent-list-\(UUID().uuidString).txt"
+        
+        let (_, _, status) = try run(
+            bin,
+            arguments: ["l", fixture.path, "!\(nonExistentListfile)"]
+        )
+        XCTAssertNotEqual(status, 0, "Should fail when listfile does not exist")
+    }
+
+    func testExcludeMaskBasic() throws {
+        let bin = try binaryURL()
+        let fixture = try fixtureURL("multi_file.arj")
+        
+        let (out, err, status) = try run(
+            bin,
+            arguments: ["l", fixture.path, "-x*.bin"]
+        )
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        XCTAssertTrue(out.contains("alpha.txt"))
+        XCTAssertFalse(out.contains("beta.bin"), "Should exclude *.bin files")
+        XCTAssertTrue(out.contains("gamma.dat"))
+    }
+
+    func testExcludeMaskMultiple() throws {
+        let bin = try binaryURL()
+        let fixture = try fixtureURL("multi_file.arj")
+        
+        let (out, err, status) = try run(
+            bin,
+            arguments: ["l", fixture.path, "-x*.bin", "-x*.dat"]
+        )
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        XCTAssertTrue(out.contains("alpha.txt"))
+        XCTAssertFalse(out.contains("beta.bin"))
+        XCTAssertFalse(out.contains("gamma.dat"))
+    }
+
+    func testExcludeMaskWithListfile() throws {
+        let bin = try binaryURL()
+        let fixture = try fixtureURL("multi_file.arj")
+        
+        let listfileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("list-\(UUID().uuidString).txt")
+        try "alpha.txt\nbeta.bin\ngamma.dat\n".write(to: listfileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: listfileURL) }
+        
+        // Include all from listfile, but exclude *.bin
+        let (out, err, status) = try run(
+            bin,
+            arguments: ["l", fixture.path, "!\(listfileURL.path)", "-x*.bin"]
+        )
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        XCTAssertTrue(out.contains("alpha.txt"))
+        XCTAssertFalse(out.contains("beta.bin"), "Should be excluded by -x*.bin")
+        XCTAssertTrue(out.contains("gamma.dat"))
+    }
+
+    func testListfileWithWildcardMask() throws {
+        let bin = try binaryURL()
+        let fixture = try fixtureURL("multi_file.arj")
+        
+        let listfileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("list-\(UUID().uuidString).txt")
+        try "*.t*\n".write(to: listfileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: listfileURL) }
+        
+        let (out, err, status) = try run(
+            bin,
+            arguments: ["l", fixture.path, "!\(listfileURL.path)"]
+        )
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        XCTAssertTrue(out.contains("alpha.txt"), "Should match *.t* pattern")
+    }
+
+    func testExtractWithExcludeMask() throws {
+        let bin = try binaryURL()
+        let fixture = try fixtureURL("multi_file.arj")
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        // Extract all except *.bin
+        let (_, err, status) = try run(
+            bin,
+            arguments: ["x", fixture.path, "-ht\(tmp.path)", "-x*.bin", "-y"]
+        )
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        
+        let contents = try FileManager.default.contentsOfDirectory(atPath: tmp.path)
+        XCTAssertTrue(contents.contains { $0.contains("alpha") }, "Should extract alpha.txt")
+        XCTAssertFalse(contents.contains { $0.contains("beta.bin") }, "Should not extract beta.bin")
+    }
+
+    func testListfileWithComments() throws {
+        let bin = try binaryURL()
+        let fixture = try fixtureURL("multi_file.arj")
+        
+        let listfileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("list-\(UUID().uuidString).txt")
+        let content = """
+        alpha.txt
+        # This is a comment
+        beta.bin
+        """
+        try content.write(to: listfileURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: listfileURL) }
+        
+        let (_, err, status) = try run(
+            bin,
+            arguments: ["l", fixture.path, "!\(listfileURL.path)"]
+        )
+        // Comments in listfile should either be ignored or cause them to be treated as filenames
+        // Depending on ARJ behavior, adjust assertion accordingly
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+    }
+
+    func testExtractPathSwitchConflictExits7() throws {
+        let bin = try binaryURL()
+        let fixture = try fixtureURL("method1.arj")
+        let (_, err, status) = try run(bin, arguments: ["x", fixture.path, "-e", "-p"])
+        XCTAssertEqual(status, 7, "stderr: \(err)")
+    }
+
+    func testExtractKeepRelativePathsStripsAbsolutePrefixes() throws {
+        let bin = try binaryURL()
+        let archive = try makeFixtureArchive(
+            entries: [
+                FixtureEntry(
+                    fileName: "/usr/local/bin/tool.txt",
+                    payload: [UInt8]("tool".utf8),
+                    method: 0,
+                    fileType: 0,
+                    hostOS: 0,
+                    flags: 0,
+                    crc32: crc32([UInt8]("tool".utf8)),
+                    modifiedDOS: 0,
+                    passwordModifier: 0,
+                    originalSize: 4
+                ),
+                FixtureEntry(
+                    fileName: "C:\\temp\\docs\\readme.txt",
+                    payload: [UInt8]("readme".utf8),
+                    method: 0,
+                    fileType: 0,
+                    hostOS: 0,
+                    flags: 0,
+                    crc32: crc32([UInt8]("readme".utf8)),
+                    modifiedDOS: 0,
+                    passwordModifier: 0,
+                    originalSize: 6
+                ),
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: archive) }
+
+        let outDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: outDir) }
+
+        let (_, err, status) = try run(bin, arguments: ["x", archive.path, "-p1", "-ht\(outDir.path)", "-y"])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outDir.appendingPathComponent("usr/local/bin/tool.txt").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outDir.appendingPathComponent("temp/docs/readme.txt").path))
+    }
+
+    func testExtractKeepFullPathsPreservesAbsolutePrefixesSafely() throws {
+        let bin = try binaryURL()
+        let archive = try makeFixtureArchive(
+            entries: [
+                FixtureEntry(
+                    fileName: "/usr/local/bin/tool.txt",
+                    payload: [UInt8]("tool".utf8),
+                    method: 0,
+                    fileType: 0,
+                    hostOS: 0,
+                    flags: 0,
+                    crc32: crc32([UInt8]("tool".utf8)),
+                    modifiedDOS: 0,
+                    passwordModifier: 0,
+                    originalSize: 4
+                ),
+                FixtureEntry(
+                    fileName: "C:\\temp\\docs\\readme.txt",
+                    payload: [UInt8]("readme".utf8),
+                    method: 0,
+                    fileType: 0,
+                    hostOS: 0,
+                    flags: 0,
+                    crc32: crc32([UInt8]("readme".utf8)),
+                    modifiedDOS: 0,
+                    passwordModifier: 0,
+                    originalSize: 6
+                ),
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: archive) }
+
+        let outDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: outDir) }
+
+        let (_, err, status) = try run(bin, arguments: ["x", archive.path, "-p", "-ht\(outDir.path)", "-y"])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outDir.appendingPathComponent("_root/usr/local/bin/tool.txt").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outDir.appendingPathComponent("drive_c/temp/docs/readme.txt").path))
+    }
+
+    func testSearchFindsWindowsCyrillicEncodedText() throws {
+        let bin = try binaryURL()
+        let text = "Привет ARJ"
+        guard let encoded = text.data(using: .windowsCP1251) else {
+            throw XCTSkip("windowsCP1251 not supported on this platform")
+        }
+        let archive = try makeFixtureArchive(
+            entries: [
+                FixtureEntry(
+                    fileName: "notes.txt",
+                    payload: [UInt8](encoded),
+                    method: 0,
+                    fileType: 0,
+                    hostOS: 0,
+                    flags: 0,
+                    crc32: crc32([UInt8](encoded)),
+                    modifiedDOS: 0,
+                    passwordModifier: 0,
+                    originalSize: UInt32(encoded.count)
+                ),
+            ]
+        )
+        defer { try? FileManager.default.removeItem(at: archive) }
+
+        let (out, err, status) = try run(bin, arguments: ["w", archive.path, "привет"])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        XCTAssertTrue(out.contains("notes.txt"), out)
+    }
+
+    func testCommentOutputIncludesHeaderWhenCommentMissing() throws {
+        let bin = try binaryURL()
+        let fixture = try fixtureURL("method1.arj")
+        let (out, err, status) = try run(bin, arguments: ["c", fixture.path])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        XCTAssertTrue(out.contains("Archive comment:"), out)
+        XCTAssertTrue(out.contains("<none>"), out)
+    }
+
     // MARK: - Helpers
 
     private func packageRoot() -> URL {
@@ -186,6 +475,13 @@ final class ARJCLITests: XCTestCase {
         )
 
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("enc-\(UUID().uuidString).arj")
+        try Data(bytes).write(to: url)
+        return url
+    }
+
+    private func makeFixtureArchive(entries: [FixtureEntry]) throws -> URL {
+        let bytes = minimalArchive(entries: entries)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("fixture-\(UUID().uuidString).arj")
         try Data(bytes).write(to: url)
         return url
     }

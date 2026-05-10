@@ -5,7 +5,29 @@ import Foundation
 struct VerboseListCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "verbose-list",
-        abstract: "Verbose list of archive contents (ARJ: v)"
+        abstract: "Detailed archive listing with all information (ARJ: v)",
+        discussion: """
+        Show detailed information about all files in archive including dates, sizes, compression info.
+        
+        Usage: arj v <archive> [base_dir] [files/masks...]
+        
+        Examples:
+          arj v archive.arj                    # Show all with details
+          arj v archive.arj -x*.bak            # Exclude .bak files from listing
+          arj v archive.arj !listfile.txt      # Only show files in listfile
+          arj v archive.arj -g<password> | less # Encrypted, pipe to pager
+        
+        Output columns:
+          Filename    Name of file in archive
+          Original    Uncompressed size
+          Compressed  Compressed size
+          Ratio       Compression ratio percentage
+          Attr        File attributes
+          BPMGS       Bits per method/encryption flags (* = encrypted)
+          Date/Time   Modification date/time (UTC)
+          CRC32       Checksum value (hex)
+          GUA         G = Garbled (encrypted)
+        """
     )
 
     @OptionGroup var options: ArchiveOperationOptions
