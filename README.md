@@ -200,31 +200,32 @@ arj x archive.arj -ht/tmp -x*.bak -y
 
 📚 Command Reference
 
-Command    Status    Description
-l    ✅    List files
-v    ✅    Verbose list
-t    ✅    Test integrity
-e    ✅    Extract flat
-x    ✅    Extract with paths
-p    ✅    Print file contents
-s    ✅    View with pager
-w    ✅    Search text
-c    ✅    Show archive comment
-a    🚧    Add files
-d    🚧    Delete files
-u    🚧    Update files
-f    🚧    Freshen files
-m    🚧    Move files
-g    🚧    Garble/encrypt
-r    🚧    Remove paths
-n    🚧    Rename files
-o    🚧    Reorder files
-b    🚧    Batch mode
-i    🚧    Integrity data
-j    🚧    Join split archives
-k    🚧    Backup cleanup
-q    🚧    Recover archive
-y    🚧    Copy/verify archive
+| Command | Status | Description |
+|---|---|---|
+|l | ✅ | List files |
+|v | ✅ | Verbose list |
+|t | ✅ | Test integrity |
+|e | ✅ | Extract flat |
+|x | ✅ | Extract with paths |
+|p | ✅ | Print file contents |
+|s | ✅ | View with pager |
+|w | ✅ | Search text |
+|c | ✅ | Show archive comment |
+|a | 🚧 | Add files |
+|d | 🚧 | Delete files |
+|u | 🚧 | Update files |
+|f | 🚧 | Freshen files |
+|m | 🚧 | Move files |
+|g | 🚧 | Garble/encrypt |
+|r | 🚧 | Remove paths |
+|n | 🚧 | Rename files |
+|o | 🚧 | Reorder files |
+|b | 🚧 | Batch mode |
+|i | 🚧 | Integrity data |
+|j | 🚧 | Join split archives |
+|k | 🚧 | Backup cleanup |
+|q | 🚧 | Recover archive |
+|y | 🚧 | Copy/verify archive |
 
 Write-mode commands currently return exit code 2.
 
