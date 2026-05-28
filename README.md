@@ -84,12 +84,13 @@ Developer Experience
 
 ARJ.swift consists of multiple layers:
 
-Component    Description
-ARJArchive    Native Swift archive API
-arj    Classic ARJ-compatible CLI frontend
-Embedded C decoder    Legacy decompression backend
-Argument preprocessing layer    Normalizes ARJ-style CLI syntax
-Extraction engine    Handles paths, filters, validation
+| Component | Description |
+|---|---|
+|ARJArchive | Native Swift archive API |
+|arj | Classic ARJ-compatible CLI frontend |
+|Embedded C decoder | Legacy decompression backend |
+|Argument preprocessing layer | Normalizes ARJ-style CLI syntax |
+|Extraction engine | Handles paths, filters, validation |
 
 ---
 
