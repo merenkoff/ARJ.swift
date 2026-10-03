@@ -1,9 +1,9 @@
 import Foundation
-import CARJCore
 
 public struct ARJArchive: Sendable {
     private let data: Data
-    private let info: ARJArchiveInfo?
+    let mainHeader: ARJParsedMainHeader?
+    private let parsedEntries: Result<[ARJParsedEntry], ARJError>
 
     public init(path: String) throws {
         guard let fileData = FileManager.default.contents(atPath: path) else {
@@ -13,22 +13,35 @@ public struct ARJArchive: Sendable {
     }
 
     public init(data: Data) {
+        // The parser and the stored ranges use zero-based offsets.
+        let data = data.startIndex == 0 ? data : Data(data)
         self.data = data
+
         var parser = ARJParser(data: data)
-        self.info = try? parser.parseArchiveInfo()
+        do {
+            let main = try parser.parseMainHeader()
+            mainHeader = main
+            do {
+                parsedEntries = .success(try parser.parseEntries())
+            } catch {
+                parsedEntries = .failure(Self.arjError(error))
+            }
+        } catch {
+            mainHeader = nil
+            parsedEntries = .failure(Self.arjError(error))
+        }
     }
 
     public var archiveComment: String? {
-        info?.comment
+        mainHeader?.comment
     }
 
     public var archiveName: String {
-        info?.archiveName ?? ""
+        mainHeader?.archiveName ?? ""
     }
 
     public func entries() throws -> [ARJEntry] {
-        var parser = ARJParser(data: data)
-        return try parser.parseEntries()
+        try parsedEntries.get().map(\.entry)
     }
 
     public func extract(entry: ARJEntry, password: String? = nil) throws -> Data {
@@ -37,18 +50,14 @@ public struct ARJArchive: Sendable {
     }
 
     public func extract(named name: String, password: String? = nil) throws -> Data {
-        let parsedEntries = try allParsedEntries()
-        guard let parsed = parsedEntries.first(where: { $0.entry.name == name }) else {
+        guard let parsed = try parsedEntries.get().first(where: { $0.entry.name == name }) else {
             throw ARJError.entryNotFound
         }
         return try extractData(from: parsed, password: password)
     }
 
     public func extractFirstStored(named name: String) -> Data? {
-        guard let parsedEntries = try? allParsedEntries() else {
-            return nil
-        }
-        guard let parsed = parsedEntries.first(where: { $0.entry.name == name }) else {
+        guard let parsed = try? parsedEntries.get().first(where: { $0.entry.name == name }) else {
             return nil
         }
         return try? extractData(from: parsed, password: nil)
@@ -62,105 +71,79 @@ public struct ARJArchive: Sendable {
     }
 
     public func extractAllStored() throws -> [String: Data] {
-        let parsedEntries = try allParsedEntries()
         var result: [String: Data] = [:]
-
-        for parsed in parsedEntries where parsed.entry.compressionMethod == .stored && !parsed.entry.isEncrypted {
+        for parsed in try parsedEntries.get()
+            where parsed.entry.compressionMethod == .stored && !parsed.entry.isEncrypted {
             result[parsed.entry.name] = data.subdata(in: parsed.dataRange)
         }
-
         return result
     }
 
-    private func allParsedEntries() throws -> [ARJParsedEntry] {
-        var parser = ARJParser(data: data)
-        return try parser.parseEntriesDetailed()
+    /// Verifies the CRC32 of the main header and of every file header (including extended headers).
+    /// Payload CRCs are checked separately by `extract`.
+    public func validateHeaderCRCs() throws {
+        let entries = try parsedEntries.get()
+        guard let mainHeader, mainHeader.header.hasValidCRCs else {
+            throw ARJError.invalidHeaderCRC
+        }
+        for parsed in entries where !parsed.header.hasValidCRCs {
+            throw ARJError.invalidHeaderCRC
+        }
+    }
+
+    // MARK: - Internal access for ARJWriter
+
+    func parsedArchive() throws -> (main: ARJParsedMainHeader, entries: [ARJParsedEntry], data: Data) {
+        let entries = try parsedEntries.get()
+        guard let mainHeader else { throw ARJError.malformedHeader }
+        return (mainHeader, entries, data)
+    }
+
+    // MARK: - Private
+
+    private static func arjError(_ error: Error) -> ARJError {
+        (error as? ARJError) ?? .malformedHeader
     }
 
     private func parsedEntry(for entry: ARJEntry) throws -> ARJParsedEntry {
-        let parsedEntries = try allParsedEntries()
-        guard let parsed = parsedEntries.first(where: { $0.entry == entry }) else {
+        guard let parsed = try parsedEntries.get().first(where: { $0.entry == entry }) else {
             throw ARJError.entryNotFound
         }
         return parsed
     }
 
     private func extractData(from parsed: ARJParsedEntry, password: String?) throws -> Data {
-        if parsed.entry.isEncrypted && password == nil {
+        let entry = parsed.entry
+        if entry.isEncrypted,
+           let version = mainHeader?.encryptionVersion,
+           version >= ARJFormat.firstUnsupportedEncryptionVersion {
+            throw ARJError.unsupportedEncryptedArchive
+        }
+        if entry.isEncrypted && password == nil {
             throw ARJError.passwordRequired
         }
+        if entry.compressionMethod == .stored && entry.compressedSize != entry.originalSize {
+            throw ARJError.crcMismatch
+        }
 
-        var compressedData = data.subdata(in: parsed.dataRange)
-        if parsed.entry.isEncrypted, let password = password {
+        var payload = data.subdata(in: parsed.dataRange)
+        if entry.isEncrypted, let password {
             let passwordBytes = Array(password.utf8)
             guard !passwordBytes.isEmpty else {
                 throw ARJError.passwordRequired
             }
-            compressedData = applyXOR(
-                input: compressedData,
-                password: passwordBytes,
-                modifier: parsed.passwordModifier
-            )
+            payload = ARJCodec.garble(payload, password: passwordBytes, modifier: parsed.passwordModifier)
         }
 
-        let outputSize = Int(parsed.entry.originalSize)
-        var output = Data(count: outputSize)
-        var writtenSize: Int = 0
-
-        let status = compressedData.withUnsafeBytes { inputBuffer in
-            output.withUnsafeMutableBytes { outputBuffer in
-                arj_core_decode(
-                    parsed.entry.compressionMethod.rawValue,
-                    inputBuffer.bindMemory(to: UInt8.self).baseAddress,
-                    compressedData.count,
-                    outputBuffer.bindMemory(to: UInt8.self).baseAddress,
-                    outputSize,
-                    &writtenSize
-                )
-            }
+        let output: Data
+        do {
+            output = try ARJCodec.decode(payload, method: entry.compressionMethod, originalSize: Int(entry.originalSize))
+        } catch ARJError.cCoreFailure where entry.isEncrypted {
+            throw ARJError.wrongPassword
         }
 
-        if status == ARJ_CORE_UNSUPPORTED_METHOD {
-            throw ARJError.unsupportedCompressionMethod(parsed.entry.compressionMethod)
-        }
-
-        guard status == ARJ_CORE_OK else {
-            if parsed.entry.isEncrypted {
-                throw ARJError.wrongPassword
-            }
-            throw ARJError.cCoreFailure
-        }
-
-        if writtenSize < output.count {
-            output.removeSubrange(writtenSize..<output.count)
-        }
-
-        let computedCRC = CRC32.compute(output)
-        if computedCRC != parsed.entry.crc32 {
-            if parsed.entry.isEncrypted {
-                throw ARJError.wrongPassword
-            }
-            throw ARJError.crcMismatch
-        }
-
-        return output
-    }
-
-    private func applyXOR(input: Data, password: [UInt8], modifier: UInt8) -> Data {
-        var output = Data(count: input.count)
-        let passwordCount = password.count
-        input.withUnsafeBytes { inputBuffer in
-            output.withUnsafeMutableBytes { outputBuffer in
-                guard
-                    let inputBase = inputBuffer.bindMemory(to: UInt8.self).baseAddress,
-                    let outputBase = outputBuffer.bindMemory(to: UInt8.self).baseAddress
-                else { return }
-                for index in 0..<input.count {
-                    let passwordByte = password[index % passwordCount]
-                    let keyByte = modifier &+ passwordByte
-                    outputBase[index] = inputBase[index] ^ keyByte
-                }
-            }
+        if CRC32.compute(output) != entry.crc32 {
+            throw entry.isEncrypted ? ARJError.wrongPassword : ARJError.crcMismatch
         }
         return output
     }

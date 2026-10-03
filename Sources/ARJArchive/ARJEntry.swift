@@ -11,6 +11,10 @@ public struct ARJEntry: Sendable, Equatable {
     public let isEncrypted: Bool
     public let modified: Date
     public let isDirectory: Bool
+    /// Per-file comment stored in the local header, if any.
+    public let comment: String?
+    /// Raw access mode: Unix permission bits for Unix-like hosts, DOS attributes otherwise.
+    public let fileMode: UInt16
 
     public var normalizedPath: String {
         var converted = name.replacingOccurrences(of: "\\", with: "/")

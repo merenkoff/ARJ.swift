@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=waving&color=0:0d1117,35:161b22,70:1f6feb,100:58a6ff&height=220&section=header&text=ARJ.swift&fontSize=58&fontColor=ffffff&fontAlignY=38&desc=Modern%20ARJ%20archive%20toolkit%20for%20Swift&descAlignY=60&descSize=18&descColor=c9d1d9&animation=fadeIn" />
-  <b>Read · Extract · Inspect · Test · Automate</b>
+  <b>Read · Create · Extract · Inspect · Test · Automate</b>
 </p>
 <p align="center">
   Native Swift library and ARJ-compatible CLI for working with classic ARJ archives on modern systems.
@@ -49,14 +49,15 @@ ARJ.swift brings native ARJ support to modern Swift environments with:
 
 Archive Support
 
-* ✅ Parse ARJ archive structures
-* ✅ Read archive comments
-* ✅ Compression methods 0...4
-* ✅ CRC32 validation
-* ✅ XOR-encrypted archives
+* ✅ Parse ARJ archive structures (including self-extracting archives)
+* ✅ Read archive and per-file comments
+* ✅ Compression methods 0...4 — decoding and encoding
+* ✅ Create archives and update existing ones (add, replace, delete, rename, comment)
+* ✅ CRC32 validation of data and headers
+* ✅ XOR-encrypted ("garbled") archives — read and write
 * ✅ Typed Swift errors
-* ✅ Entry metadata and path normalization
-* 🚧 Write/update support planned
+* ✅ Entry metadata: timestamps, file modes, directories, path normalization
+* ✅ Byte-for-byte interoperable with ARJ 3.10
 
 Command-Line Tool
 
@@ -174,6 +175,25 @@ arj x backup.arj -htout/ -e
 
 ---
 
+Creating & Updating Archives
+
+```bash
+# Create (or extend) an archive, method 1 by default
+arj a backup.arj docs '*.txt' -r
+# Fastest method, garble added files with a password
+arj a backup.arj . '*.log' -m4 -gsecret
+# Store without compression
+arj a backup.arj . data.bin -m0
+# Add new files and replace older entries
+arj u backup.arj docs '*' -r
+# Delete entries (no password needed, other entries are copied as-is)
+arj d backup.arj '*.tmp'
+# Set the archive comment
+arj c backup.arj -zcomment.txt
+```
+
+---
+
 Search & Validation
 
 ```bash
@@ -210,14 +230,14 @@ arj x archive.arj -ht/tmp -x*.bak -y
 |p | ✅ | Print file contents |
 |s | ✅ | View with pager |
 |w | ✅ | Search text |
-|c | ✅ | Show archive comment |
-|a | 🚧 | Add files |
-|d | 🚧 | Delete files |
-|u | 🚧 | Update files |
-|f | 🚧 | Freshen files |
-|m | 🚧 | Move files |
+|c | ✅ | Show archive comment / set it with -z<file> |
+|a | ✅ | Add files (creates the archive if needed) |
+|d | ✅ | Delete files |
+|u | ✅ | Update files (new and newer) |
+|f | ✅ | Freshen files (newer only) |
+|m | ✅ | Move files into the archive |
+|r | ✅ | Remove paths from names |
 |g | 🚧 | Garble/encrypt |
-|r | 🚧 | Remove paths |
 |n | 🚧 | Rename files |
 |o | 🚧 | Reorder files |
 |b | 🚧 | Batch mode |
@@ -227,7 +247,7 @@ arj x archive.arj -ht/tmp -x*.bak -y
 |q | 🚧 | Recover archive |
 |y | 🚧 | Copy/verify archive |
 
-Write-mode commands currently return exit code 2.
+Commands marked 🚧 return exit code 2.
 
 ---
 
@@ -355,6 +375,52 @@ do {
 
 ---
 
+Header Integrity
+
+```swift
+// Verifies the CRC32 of every header (payload CRCs are checked by extract).
+try archive.validateHeaderCRCs()
+```
+
+---
+
+Creating Archives
+
+```swift
+var writer = ARJWriter(comment: "Nightly backup")   // host OS .dos by default
+try writer.addDirectory(named: "docs")
+try writer.addFile(named: "docs/readme.txt", data: readme)                 // method 1 (best)
+try writer.addFile(named: "logs/today.log", data: log, method: .compressedFastest)
+try writer.addFile(named: "secret.txt", data: secret, password: "hunter2") // XOR garble
+try writer.addFile(at: URL(fileURLWithPath: "/etc/hosts"), named: "etc/hosts")
+try writer.write(to: URL(fileURLWithPath: "backup.arj"))                    // atomic
+let bytes = try writer.makeData()                                          // or keep it in memory
+```
+
+Data that does not shrink is stored (method 0) automatically, like ARJ does.
+
+---
+
+Updating Archives
+
+```swift
+let archive = try ARJArchive(path: "backup.arj")
+var writer = try ARJWriter(updating: archive)
+
+try writer.addFile(named: "docs/readme.txt", data: newReadme)            // replaces in place
+try writer.addFile(named: "notes.txt", data: notes, ifExists: .skip)      // or .fail
+writer.removeEntries { $0.name.hasSuffix(".tmp") }
+try writer.renameEntry(named: "docs/readme.txt", to: "README.txt")
+writer.comment = "Updated\n"
+
+try writer.write(to: URL(fileURLWithPath: "backup.arj"))
+```
+
+Existing entries are copied byte for byte — they are never decompressed or re-encrypted,
+so editing an archive needs no passwords and keeps the original compression.
+
+---
+
 Bulk Extraction
 
 ```swift
@@ -400,6 +466,10 @@ Test Coverage
 * Exit code compatibility
 * Help and usage validation
 * Extraction logic
+* Encoder round trips for methods 1...4 (including without the stored fallback)
+* Archive creation and in-place editing
+* Header CRCs, extended headers, self-extracting archives
+* Corrupted-archive robustness
 
 ---
 
@@ -408,7 +478,9 @@ Test Coverage
 | Code | Meaning |
 |---|---|
 | 0 | Success |
-| 2 | User error / not implemented (write commands) |
+| 1 | Warning (e.g. nothing matched) |
+| 2 | Fatal error / command not implemented |
+| 5 | Cannot write archive |
 | 3 | Password error / encryption issues |
 | 6 | File not found |
 | 7 | File I/O error |
@@ -427,23 +499,25 @@ Completed
 * ✅ Stage 2 — CLI correctness & DX
 * ✅ Stage 3 — Read-mode feature parity
 * ✅ Stage 4 — Write architecture preparation
+* ✅ Stage 5 — Write support: encoder for methods 1...4, `ARJWriter`, `a/u/f/m/d/r/c` commands
 
-In Progress
+Next
 
-* 🚧 Archive creation
-* 🚧 Update/delete operations
-* 🚧 Advanced write workflows
-* 🚧 Archive mutation support
+* 🚧 Multi-volume archives and chapters
+* 🚧 Remaining write commands (`g`, `n`, `o`, `y`, ...)
 
 ---
 
 📝 Notes
 
-* Compression methods 0...4 are supported via the embedded C decoder
+* Compression methods 0...4 are supported via the embedded C codec (decoder and encoder)
 * Unsupported compression methods throw ARJError.unsupportedCompressionMethod
 * XOR-style encryption is supported via the password: argument
 * GOST-encrypted archives are rejected as ARJError.unsupportedEncryptedArchive
 * extractAllStored() skips encrypted entries
+* DOS timestamps carry no time zone; ARJ.swift reads and writes them as UTC.
+  Archives created with `hostOS: .unix` store exact Unix timestamps and permission bits instead
+* Header strings are written as UTF-8; names in existing archives keep their original bytes
 
 ---
 

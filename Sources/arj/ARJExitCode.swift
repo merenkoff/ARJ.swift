@@ -21,7 +21,7 @@ enum ARJExitCode: Int32 {
         if let message {
             FileHandle.standardError.write(Data("arj: \(message)\n".utf8))
         }
-        Darwin.exit(rawValue)
+        terminateProcess(rawValue)
     }
 }
 
@@ -50,10 +50,14 @@ enum ARJErrorMapper {
             return .notArjArchive
         case .wrongPassword, .passwordRequired, .crcMismatch:
             return .crcOrPasswordError
-        case .unsupportedEncryptedArchive, .unsupportedCompressionMethod, .cCoreFailure:
+        case .unsupportedEncryptedArchive, .unsupportedCompressionMethod, .cCoreFailure, .headerTooLarge, .entryTooLarge:
             return .fatalError
-        case .entryNotFound:
+        case .entryNotFound, .entryAlreadyExists:
             return .warning
+        case .fileWriteFailed:
+            return .diskFullOrWriteError
+        case .invalidEntryName:
+            return .userParameterError
         }
     }
 
@@ -86,6 +90,16 @@ enum ARJErrorMapper {
                 return "wrong password or CRC error"
             case .crcMismatch:
                 return "CRC error"
+            case let .fileWriteFailed(path):
+                return "cannot write file: \(path)"
+            case let .entryAlreadyExists(name):
+                return "entry already exists: \(name)"
+            case let .invalidEntryName(name):
+                return "invalid entry name: \(name)"
+            case .headerTooLarge:
+                return "file name or comment too long for an ARJ header"
+            case .entryTooLarge:
+                return "file too large for ARJ (4 GiB limit)"
             }
         }
         return String(describing: error)

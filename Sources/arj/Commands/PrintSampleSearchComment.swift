@@ -1,6 +1,12 @@
 import ARJArchive
 import ArgumentParser
+#if canImport(Darwin)
 import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#endif
 import Foundation
 
 struct PrintCommand: ParsableCommand {
@@ -166,17 +172,15 @@ struct SearchCommand: ParsableCommand {
 struct CommentCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "comment",
-        abstract: "Display archive comment or prepare to change it (ARJ: c)",
+        abstract: "Display or change the archive comment (ARJ: c)",
         discussion: """
-        Show the archive comment or prepare to change it (writing not yet implemented).
-        
+        Show the archive comment, or replace it with the contents of a text file.
+
         Usage: arj c <archive> [-z<file>]
-        
+
         Examples:
           arj c archive.arj                           # Display archive comment
-          arj c archive.arj -zcomment.txt             # Set comment (not implemented)
-        
-        Note: Setting/modifying comments (-z flag) requires write support, currently not implemented.
+          arj c archive.arj -zcomment.txt             # Set comment from comment.txt
         """
     )
 
@@ -200,7 +204,7 @@ struct CommentCommand: ParsableCommand {
 
         let archive = try ARJArchive(path: options.archive)
         print("Archive comment:")
-        if let comment = archive.archiveComment, !comment.isEmpty {
+        if let comment = archive.archiveComment?.trimmingCharacters(in: .newlines), !comment.isEmpty {
             print(comment)
         } else {
             print("<none>")

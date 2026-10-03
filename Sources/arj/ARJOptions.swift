@@ -14,7 +14,7 @@ struct ArchiveOperationOptions: ParsableArguments {
     @Option(name: .customLong("mask"), help: "Filename mask/glob pattern (positional args 3+). Supports * and ? wildcards")
     var masks: [String] = []
 
-    @Option(name: .customLong("password"), help: "Password for encrypted archives (-g<password>)")
+    @Option(name: .customLong("password"), help: "Password (-g<password>): decrypts entries when reading, garbles added files when writing")
     var password: String?
 
     @Option(name: .customLong("target-dir"), help: "Target directory for extraction (-ht<dir>). Use instead of positional arg 2")
@@ -26,7 +26,7 @@ struct ArchiveOperationOptions: ParsableArguments {
     @Option(name: .customLong("comment-file"), help: "Comment file path (-z<file>). Used in write mode to set archive comment")
     var commentFile: String?
 
-    @Option(name: .customLong("compression-method"), help: "Compression method 0-4 (-m0..4). 0=stored, 1=packed, 2=squeezed, 3=crunched, 4=squashed (write mode)")
+    @Option(name: .customLong("compression-method"), help: "Compression method 0-4 (-m0..4) for write commands. 0=stored, 1=best (default), 2, 3=faster, 4=fastest")
     var compressionMethod: Int?
 
     @Flag(name: .customLong("yes"), help: "Assume yes for all prompts (-y). Skip overwrite confirmations")

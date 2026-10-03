@@ -554,6 +554,128 @@ final class ARJCLITests: XCTestCase {
         XCTAssertTrue(out.contains("<none>"), out)
     }
 
+    // MARK: - Write commands backed by ARJWriter
+
+    func testAddCreatesMissingArchiveWithEveryMethod() throws {
+        let bin = try binaryURL()
+        let workDir = try makeTempDirectory("create")
+        defer { try? FileManager.default.removeItem(at: workDir) }
+        let text = String(repeating: "ARJ.swift compresses this line again and again.\n", count: 400)
+        try text.write(to: workDir.appendingPathComponent("text.txt"), atomically: true, encoding: .utf8)
+
+        for method in 0...4 {
+            let archive = workDir.appendingPathComponent("new-m\(method).arj")
+            let (_, err, status) = try run(bin, arguments: ["a", archive.path, workDir.path, "*.txt", "-m\(method)"])
+            XCTAssertEqual(status, 0, "stderr: \(err)")
+
+            let (printed, printErr, printStatus) = try run(bin, arguments: ["p", archive.path, "text.txt"])
+            XCTAssertEqual(printStatus, 0, "stderr: \(printErr)")
+            XCTAssertEqual(printed, text)
+
+            let size = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: archive.path)[.size] as? NSNumber).intValue
+            if method == 0 {
+                XCTAssertGreaterThan(size, text.utf8.count)
+            } else {
+                XCTAssertLessThan(size, text.utf8.count / 4, "method \(method)")
+            }
+        }
+    }
+
+    func testUnsupportedCompressionMethodExits2() throws {
+        let bin = try binaryURL()
+        let workDir = try makeTempDirectory("bad-method")
+        defer { try? FileManager.default.removeItem(at: workDir) }
+        try Data("x".utf8).write(to: workDir.appendingPathComponent("x.txt"))
+
+        let archive = workDir.appendingPathComponent("bad.arj")
+        let (_, _, status) = try run(bin, arguments: ["a", archive.path, workDir.path, "*.txt", "-m7"])
+        XCTAssertEqual(status, 2)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: archive.path))
+    }
+
+    func testAddWithPasswordGarblesEntriesAndDeleteNeedsNoPassword() throws {
+        let bin = try binaryURL()
+        let workDir = try makeTempDirectory("garble")
+        defer { try? FileManager.default.removeItem(at: workDir) }
+        try Data("first secret".utf8).write(to: workDir.appendingPathComponent("a.txt"))
+        try Data("second secret".utf8).write(to: workDir.appendingPathComponent("b.txt"))
+        let archive = workDir.appendingPathComponent("enc.arj")
+
+        let (_, err, status) = try run(bin, arguments: ["a", archive.path, workDir.path, "*.txt", "-gpw"])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+
+        let (_, _, testStatus) = try run(bin, arguments: ["t", archive.path])
+        XCTAssertEqual(testStatus, 3)
+
+        let (_, deleteErr, deleteStatus) = try run(bin, arguments: ["d", archive.path, "a.txt"])
+        XCTAssertEqual(deleteStatus, 0, "stderr: \(deleteErr)")
+
+        let (printed, printErr, printStatus) = try run(bin, arguments: ["p", archive.path, "b.txt", "-gpw"])
+        XCTAssertEqual(printStatus, 0, "stderr: \(printErr)")
+        XCTAssertEqual(printed, "second secret")
+        let (listOut, _, _) = try run(bin, arguments: ["l", archive.path])
+        XCTAssertFalse(listOut.contains("a.txt"), listOut)
+    }
+
+    func testMoveDeletesArchivedSourceFiles() throws {
+        let bin = try binaryURL()
+        let workDir = try makeTempDirectory("move")
+        defer { try? FileManager.default.removeItem(at: workDir) }
+        let moved = workDir.appendingPathComponent("moved.txt")
+        let kept = workDir.appendingPathComponent("kept.bin")
+        try Data("moved".utf8).write(to: moved)
+        try Data("kept".utf8).write(to: kept)
+        let archive = workDir.appendingPathComponent("move.arj")
+
+        let (out, err, status) = try run(bin, arguments: ["m", archive.path, workDir.path, "*.txt"])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        XCTAssertTrue(out.contains("Moved: 1"), out)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: moved.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: kept.path))
+
+        let (printed, _, printStatus) = try run(bin, arguments: ["p", archive.path, "moved.txt"])
+        XCTAssertEqual(printStatus, 0)
+        XCTAssertEqual(printed, "moved")
+    }
+
+    func testRemovePathsStripsDirectories() throws {
+        let bin = try binaryURL()
+        let workDir = try makeTempDirectory("paths")
+        defer { try? FileManager.default.removeItem(at: workDir) }
+        let input = workDir.appendingPathComponent("input/sub", isDirectory: true)
+        try FileManager.default.createDirectory(at: input, withIntermediateDirectories: true)
+        try Data("deep".utf8).write(to: input.appendingPathComponent("deep.txt"))
+        let archive = workDir.appendingPathComponent("paths.arj")
+
+        let (_, err, status) = try run(bin, arguments: ["a", archive.path, workDir.appendingPathComponent("input").path, "*.txt", "-r"])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        let (before, _, _) = try run(bin, arguments: ["l", archive.path])
+        XCTAssertTrue(before.contains("sub/deep.txt"), before)
+
+        let (out, rErr, rStatus) = try run(bin, arguments: ["r", archive.path])
+        XCTAssertEqual(rStatus, 0, "stderr: \(rErr)")
+        XCTAssertTrue(out.contains("Renamed: 1"), out)
+        let (printed, _, printStatus) = try run(bin, arguments: ["p", archive.path, "deep.txt"])
+        XCTAssertEqual(printStatus, 0)
+        XCTAssertEqual(printed, "deep")
+    }
+
+    func testUpdateSkipsUnchangedFiles() throws {
+        let bin = try binaryURL()
+        let workDir = try makeTempDirectory("update-twice")
+        defer { try? FileManager.default.removeItem(at: workDir) }
+        try Data("same".utf8).write(to: workDir.appendingPathComponent("same.txt"))
+        let archive = workDir.appendingPathComponent("u.arj")
+
+        let (first, err, status) = try run(bin, arguments: ["u", archive.path, workDir.path, "*.txt"])
+        XCTAssertEqual(status, 0, "stderr: \(err)")
+        XCTAssertTrue(first.contains("Added: 1"), first)
+
+        let (second, err2, status2) = try run(bin, arguments: ["u", archive.path, workDir.path, "*.txt"])
+        XCTAssertEqual(status2, 0, "stderr: \(err2)")
+        XCTAssertTrue(second.contains("Updated: 0, Added: 0, Skipped: 1"), second)
+    }
+
     // MARK: - Helpers
 
     private func packageRoot() -> URL {
@@ -606,6 +728,12 @@ final class ARJCLITests: XCTestCase {
         let out = String(data: outData, encoding: .utf8) ?? ""
         let err = String(data: errData, encoding: .utf8) ?? ""
         return (out, err, process.terminationStatus)
+    }
+
+    private func makeTempDirectory(_ label: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("arj-\(label)-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
     }
 
     private func makeEncryptedFixture(password: String, payloadText: String) throws -> URL {

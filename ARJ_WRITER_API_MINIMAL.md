@@ -1,5 +1,9 @@
 # ARJWriter Minimal API (Stage 4.1)
 
+> Status: implemented as the public `ARJWriter` struct in the `ARJArchive` library
+> (see README → Library Usage). The final API is value-based (`addFile`, `removeEntries`,
+> `renameEntry`, `write(to:)`) instead of the `apply(changes:)` shape proposed below.
+
 Цель: зафиксировать минимальный контракт `ARJWriter`, достаточный для первых write-команд (`a`, `d`, `c-write`) без преждевременного усложнения.
 
 ## Scope v1
