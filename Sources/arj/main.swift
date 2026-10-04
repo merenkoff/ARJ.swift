@@ -1,5 +1,11 @@
 import ARJArchive
+#if canImport(Darwin)
 import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#elseif canImport(Musl)
+import Musl
+#endif
 import Foundation
 
 enum ARJProgram {
@@ -42,7 +48,7 @@ private func printARJHelp(executable: String) {
     let name = URL(fileURLWithPath: executable).lastPathComponent
     print(
         """
-        \(name) — ARJ-style CLI for ARJ.swift (read commands + partial write support)
+        \(name) — ARJ-style CLI for ARJ.swift (read and write support)
 
         Usage: \(name) <command> [-switches] <archive[.arj]> [base_dir] [files...]
 
@@ -56,16 +62,18 @@ private func printARJHelp(executable: String) {
                         w search    Search for text pattern
                         c comment   Show archive comment (or set with -z<file>)
 
-        Write (implemented): a add      Add files
-                             d delete   Delete by masks
-                             u update   Update existing + add missing
-                             f freshen  Update only existing entries
-                             c -z<file> Set archive comment
+        Write commands: a add      Add files (creates the archive if needed)
+                        u update   Add new files, replace older entries
+                        f freshen  Replace older entries only
+                        m move     Add files, then delete the originals
+                        d delete   Delete entries by masks
+                        r paths    Remove paths from entry names
+                        c -z<file> Set archive comment
 
-        Write (stubs):      m g r n o b i j k q y  ac cc dc
+        Not implemented (exit 2): g n o b i j k q y  ac cc dc
 
         Common switches:
-          -g<pass>          Password for encrypted archives
+          -g<pass>          Password (read encrypted entries / garble added files)
           -ht<dir>          Target directory for extraction (-e/-x)
           -w<dir>           Work directory
           -y                Assume yes (don't prompt)
@@ -78,7 +86,7 @@ private func printARJHelp(executable: String) {
           -_                Convert names to lowercase
           -o                Prompt before overwriting
           -i                No progress indicator
-          -m0..4            Compression method (for write commands)
+          -m0..4            Compression method for write commands (default -m1)
           -jt               CRC test mode
           -z<file>          Comment file (for write commands)
 
@@ -86,7 +94,8 @@ private func printARJHelp(executable: String) {
 
         Exit codes:
           0    Success
-          2    User error / not implemented
+          1    Warning (e.g. nothing matched)
+          2    Fatal error / not implemented
           3    Password error / encryption issues
           6    File not found
           7    File I/O error
@@ -102,6 +111,8 @@ private func printARJHelp(executable: String) {
           \(name) x archive.arj -x*.bak -x*.tmp   # Extract excluding .bak and .tmp
           \(name) t archive.arj -gsecret          # Test with password
           \(name) v archive.arj | less            # Verbose list (pipe to pager)
+          \(name) a backup.arj docs *.txt -r     # Create/extend an archive (method 1)
+          \(name) a backup.arj . -m4 -gsecret    # Fastest method, garbled with a password
         """
     )
 }

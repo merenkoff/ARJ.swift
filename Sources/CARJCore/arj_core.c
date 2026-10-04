@@ -1,25 +1,8 @@
 #include "arj_core.h"
+#include "arj_internal.h"
 
 #include <stdbool.h>
 #include <string.h>
-
-enum {
-    ARJ_CODE_BIT = 16,
-    ARJ_THRESHOLD = 3,
-    ARJ_DICSIZ = 26624,
-    ARJ_FDICSIZ = 32768,
-    ARJ_MAXMATCH = 256,
-    ARJ_NC = 255 + ARJ_MAXMATCH + 2 - ARJ_THRESHOLD,
-    ARJ_NP = 17,
-    ARJ_CBIT = 9,
-    ARJ_NT = ARJ_CODE_BIT + 3,
-    ARJ_PBIT = 5,
-    ARJ_TBIT = 5,
-    ARJ_NPT = (ARJ_NT > ARJ_NP ? ARJ_NT : ARJ_NP),
-    ARJ_CTABLESIZE = 4096,
-    ARJ_PTABLESIZE = 256,
-    ARJ_LEFT_RIGHT_SIZE = ARJ_NC * 2 + 32
-};
 
 typedef struct arj_decoder {
     const uint8_t *input;
@@ -28,11 +11,13 @@ typedef struct arj_decoder {
     uint8_t *output;
     size_t output_size;
     size_t output_pos;
+    /* Bytes requested past the end of the input; valid streams only read a few bytes ahead. */
+    size_t overrun;
 
     uint16_t bitbuf;
     uint8_t byte_buf;
     int bitcount;
-    int16_t blocksize;
+    uint16_t blocksize;
 
     uint16_t c_table[ARJ_CTABLESIZE];
     uint16_t pt_table[ARJ_PTABLESIZE];
@@ -50,6 +35,7 @@ static bool arj_fillbuf(arj_decoder *d, int n) {
             d->byte_buf = d->input[d->input_pos++];
         } else {
             d->byte_buf = 0;
+            d->overrun++;
         }
         d->bitcount = 8;
     }
@@ -152,6 +138,7 @@ static bool arj_read_pt_len(arj_decoder *d, int nn, int nbit, int i_special) {
     n = arj_getbits(d, nbit);
     if (n == 0) {
         c = (short)arj_getbits(d, nbit);
+        if (c >= nn) return false;
         for (i = 0; i < nn; i++) d->pt_len[i] = 0;
         for (i = 0; i < ARJ_PTABLESIZE; i++) d->pt_table[i] = (uint16_t)c;
         return true;
@@ -186,6 +173,7 @@ static bool arj_read_c_len(arj_decoder *d) {
     n = arj_getbits(d, ARJ_CBIT);
     if (n == 0) {
         c = arj_getbits(d, ARJ_CBIT);
+        if (c >= ARJ_NC) return false;
         for (i = 0; i < ARJ_NC; i++) d->c_len[i] = 0;
         for (i = 0; i < ARJ_CTABLESIZE; i++) d->c_table[i] = (uint16_t)c;
         return true;
@@ -218,7 +206,7 @@ static bool arj_read_c_len(arj_decoder *d) {
 static bool arj_decode_c(arj_decoder *d, uint16_t *out) {
     uint16_t j, mask;
     if (d->blocksize == 0) {
-        d->blocksize = (int16_t)arj_getbits(d, ARJ_CODE_BIT);
+        d->blocksize = (uint16_t)arj_getbits(d, ARJ_CODE_BIT);
         if (!arj_read_pt_len(d, ARJ_NT, ARJ_TBIT, 3)) return false;
         if (!arj_read_c_len(d)) return false;
         if (!arj_read_pt_len(d, ARJ_NP, ARJ_PBIT, -1)) return false;
@@ -256,10 +244,11 @@ static uint16_t arj_decode_p(arj_decoder *d) {
 }
 
 static bool arj_decode_method_1_3(arj_decoder *d, size_t origsize) {
-    int16_t i, r, c;
-    static int16_t j;
+    int i, j, r, c;
     uint8_t dec_text[ARJ_DICSIZ];
     size_t count = origsize;
+
+    memset(dec_text, 0, sizeof(dec_text));
 
     d->blocksize = 0;
     d->bitbuf = 0;
@@ -270,8 +259,9 @@ static bool arj_decode_method_1_3(arj_decoder *d, size_t origsize) {
     r = 0;
     while (count > 0) {
         uint16_t cv;
+        if (d->overrun > ARJ_MAX_OVERRUN) return false;
         if (!arj_decode_c(d, &cv)) return false;
-        c = (int16_t)cv;
+        c = (int)cv;
         if (c <= 255) {
             if (d->output_pos >= d->output_size) return false;
             dec_text[r] = (uint8_t)c;
@@ -279,10 +269,13 @@ static bool arj_decode_method_1_3(arj_decoder *d, size_t origsize) {
             count--;
             if (++r >= ARJ_DICSIZ) r = 0;
         } else {
-            j = (int16_t)(c - (255 + 1 - ARJ_THRESHOLD));
+            j = c - (255 + 1 - ARJ_THRESHOLD);
             if ((size_t)j > count) return false;
             count -= (size_t)j;
-            i = (int16_t)(r - (int16_t)arj_decode_p(d) - 1);
+            int distance = (int)arj_decode_p(d);
+            /* Corrupt streams can encode pointers beyond the dictionary. */
+            if (distance >= ARJ_DICSIZ) return false;
+            i = r - distance - 1;
             if (i < 0) i += ARJ_DICSIZ;
             while (--j >= 0) {
                 if (d->output_pos >= d->output_size) return false;
@@ -331,6 +324,7 @@ static bool arj_decode_method_4(arj_decoder *d, size_t origsize) {
     unsigned long ncount = 0;
     uint8_t ntext[ARJ_FDICSIZ];
 
+    memset(ntext, 0, sizeof(ntext));
     d->bitbuf = 0;
     d->byte_buf = 0;
     d->bitcount = 0;
@@ -338,6 +332,7 @@ static bool arj_decode_method_4(arj_decoder *d, size_t origsize) {
 
     r = 0;
     while (ncount < origsize) {
+        if (d->overrun > ARJ_MAX_OVERRUN) return false;
         c = arj_decode_len(d);
         if (c == 0) {
             if (d->output_pos >= d->output_size) return false;

@@ -51,7 +51,7 @@ final class ARJArchiveTests: XCTestCase {
                             fileType: 0,
                             hostOS: 0,
                             flags: 0,
-                            crc32: wrongCrc,
+                            crc32: wrongCrc
                         ),
                     ]
                 )

@@ -6,7 +6,7 @@ private func runWriteStub(letter: String, name: String, options: ArchiveOperatio
     try options.validateArchiveArgument()
     throw ARJCLIError.exit(
         .fatalError,
-        message: "command '\(letter)' (\(name)) is not implemented yet (write/modify support is pending in Stage 4)"
+        message: "command '\(letter)' (\(name)) is not implemented yet"
     )
 }
 
@@ -14,7 +14,17 @@ struct AddCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "add",
         abstract: "Add files to archive (ARJ: a)",
-        discussion: "Minimal write-mode implementation (Stage 5, iteration 1)."
+        discussion: """
+        Adds files to the archive, creating it if it does not exist. Existing entries are replaced
+        unless -o is given without -y.
+
+        Usage: arj a <archive> [base_dir] [files/masks...]
+
+        Examples:
+          arj a backup.arj docs *.txt -r          # Add .txt files from docs/ recursively (method 1)
+          arj a backup.arj . -m4 -x*.tmp          # Fastest compression, skip *.tmp
+          arj a backup.arj . secret.txt -gpass    # Garble added files with a password
+        """
     )
     @OptionGroup var options: ArchiveOperationOptions
 
@@ -28,7 +38,8 @@ struct AddCommand: ParsableCommand {
         }
         let result = try applyWriterChanges(
             options: options,
-            changes: [.add(inputs)]
+            createIfMissing: true,
+            changes: [.add(inputs, mode: .add(replaceExisting: options.assumeYes || !options.overwritePrompt))]
         )
         print("Added: \(result.entriesAdded), Replaced: \(result.entriesReplaced), Skipped: \(result.entriesSkipped)")
     }
@@ -104,7 +115,11 @@ struct DeleteCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "delete",
         abstract: "Delete files from archive (ARJ: d)",
-        discussion: "Minimal write-mode implementation (Stage 5, iteration 1)."
+        discussion: """
+        Removes matching entries. Remaining entries are copied as-is, so no password is needed.
+
+        Usage: arj d <archive> <files/masks...>
+        """
     )
     @OptionGroup var options: ArchiveOperationOptions
     func run() throws {
@@ -128,41 +143,26 @@ struct DeleteCommand: ParsableCommand {
     }
 }
 
+/// Applies `changes` to the archive named in `options` and rewrites it atomically.
 func applyWriterChanges(
     options: ArchiveOperationOptions,
-    forceReplaceExisting: Bool? = nil,
+    createIfMissing: Bool = false,
     changes: [ARJWriterChange]
 ) throws -> ARJWriterResult {
-    let inputURL = URL(fileURLWithPath: options.archive)
-    let tempURL = inputURL.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).tmp.arj")
-    let result = try ARJWriter.apply(
-        inputArchivePath: inputURL.path,
-        outputArchivePath: tempURL.path,
+    try ARJArchiveUpdater.apply(
+        archivePath: options.archive,
+        createIfMissing: createIfMissing,
         changes: changes,
         password: options.password,
-        options: ARJWriterOptions(
-            compressionMethod: options.compressionMethod,
-            replaceExistingEntries: forceReplaceExisting ?? (options.assumeYes || !options.overwritePrompt)
-        )
+        compressionMethod: options.compressionMethod
     )
-    try FileManager.default.removeItemIfExists(at: inputURL)
-    try FileManager.default.moveItem(at: tempURL, to: inputURL)
-    return result
-}
-
-extension FileManager {
-    func removeItemIfExists(at url: URL) throws {
-        if fileExists(atPath: url.path) {
-            try removeItem(at: url)
-        }
-    }
 }
 
 struct UpdateCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "update",
         abstract: "Update/add files in archive (ARJ: u)",
-        discussion: "Updates existing files and adds missing ones."
+        discussion: "Adds new files and replaces entries that are older than the file on disk. Creates the archive if needed."
     )
     @OptionGroup var options: ArchiveOperationOptions
 
@@ -176,8 +176,8 @@ struct UpdateCommand: ParsableCommand {
         }
         let result = try applyWriterChanges(
             options: options,
-            forceReplaceExisting: true,
-            changes: [.add(inputs)]
+            createIfMissing: true,
+            changes: [.add(inputs, mode: .update)]
         )
         print("Updated: \(result.entriesReplaced), Added: \(result.entriesAdded), Skipped: \(result.entriesSkipped)")
     }
@@ -187,7 +187,7 @@ struct FreshenCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "freshen",
         abstract: "Freshen existing files in archive (ARJ: f)",
-        discussion: "Updates only files that already exist in the archive."
+        discussion: "Replaces entries that already exist in the archive and are older than the file on disk."
     )
     @OptionGroup var options: ArchiveOperationOptions
     func run() throws {
@@ -208,48 +208,88 @@ struct FreshenCommand: ParsableCommand {
 
         let result = try applyWriterChanges(
             options: options,
-            forceReplaceExisting: true,
-            changes: [.add(inputs)]
+            changes: [.add(inputs, mode: .freshen)]
         )
         print("Freshened: \(result.entriesReplaced), Added: \(result.entriesAdded), Skipped: \(result.entriesSkipped)")
     }
 }
 
-struct MoveStubCommand: ParsableCommand {
+struct MoveCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "move",
-        abstract: "Move files in archive (ARJ: m) — not yet implemented",
-        discussion: "Write support for this command is planned for Stage 4 of development."
+        abstract: "Move files to archive (ARJ: m)",
+        discussion: """
+        Adds files like `a` (creating the archive if needed) and deletes each source file
+        once the archive has been written successfully.
+
+        Usage: arj m <archive> [base_dir] [files/masks...]
+        """
     )
     @OptionGroup var options: ArchiveOperationOptions
-    func run() throws { try runWriteStub(letter: "m", name: "move", options: options) }
+
+    func run() throws {
+        try options.validateArchiveArgument()
+        let base = URL(fileURLWithPath: options.baseDirectory ?? FileManager.default.currentDirectoryPath, isDirectory: true)
+        let masks = try ARJFilter.resolvedMasks(masks: options.masks, listfiles: options.listfiles)
+        let inputs = try AddCommand().collectAddInputs(baseDirectory: base, masks: masks, recursive: options.recursive, excludes: options.excludes)
+        if inputs.isEmpty {
+            throw ARJCLIError.exit(.warning, message: "no files matched for move")
+        }
+        let result = try applyWriterChanges(
+            options: options,
+            createIfMissing: true,
+            changes: [.add(inputs, mode: .add(replaceExisting: options.assumeYes || !options.overwritePrompt))]
+        )
+        for source in result.archivedSources {
+            try FileManager.default.removeItem(at: source)
+        }
+        print("Moved: \(result.archivedSources.count), Skipped: \(result.entriesSkipped)")
+    }
 }
 
 struct GarbleStubCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "garble",
         abstract: "Encrypt/re-encrypt files (ARJ: g) — not yet implemented",
-        discussion: "Write support for this command is planned for Stage 4 of development."
+        discussion: "Not implemented yet; the command exits with code 2."
     )
     @OptionGroup var options: ArchiveOperationOptions
     func run() throws { try runWriteStub(letter: "g", name: "garble", options: options) }
 }
 
-struct RemovePathsStubCommand: ParsableCommand {
+struct RemovePathsCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "remove-paths",
-        abstract: "Remove paths from archive (ARJ: r) — not yet implemented",
-        discussion: "Write support for this command is planned for Stage 4 of development."
+        abstract: "Remove paths from filenames in archive (ARJ: r)",
+        discussion: """
+        Renames matching entries to their base names. Entries whose base name is already
+        taken are left unchanged.
+
+        Usage: arj r <archive> [files/masks...]
+        """
     )
     @OptionGroup var options: ArchiveOperationOptions
-    func run() throws { try runWriteStub(letter: "r", name: "remove-paths", options: options) }
+
+    func run() throws {
+        try options.validateArchiveArgument()
+        var positionalMasks = options.masks
+        if let base = options.baseDirectory, !base.isEmpty {
+            positionalMasks.insert(base, at: 0)
+        }
+        let masks = try ARJFilter.resolvedMasks(masks: positionalMasks, listfiles: options.listfiles)
+        let result = try applyWriterChanges(
+            options: options,
+            changes: [.removePaths(ARJDeleteSelector(masks: masks, excludes: options.excludes))]
+        )
+        print("Renamed: \(result.entriesRenamed), Skipped: \(result.entriesSkipped)")
+    }
 }
 
 struct RenameStubCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "rename",
         abstract: "Rename files in archive (ARJ: n) — not yet implemented",
-        discussion: "Write support for this command is planned for Stage 4 of development."
+        discussion: "Not implemented yet; the command exits with code 2."
     )
     @OptionGroup var options: ArchiveOperationOptions
     func run() throws { try runWriteStub(letter: "n", name: "rename", options: options) }
@@ -259,7 +299,7 @@ struct OrderStubCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "order",
         abstract: "Reorder files in archive (ARJ: o) — not yet implemented",
-        discussion: "Write support for this command is planned for Stage 4 of development."
+        discussion: "Not implemented yet; the command exits with code 2."
     )
     @OptionGroup var options: ArchiveOperationOptions
     func run() throws { try runWriteStub(letter: "o", name: "order", options: options) }
@@ -269,7 +309,7 @@ struct BatchStubCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "batch",
         abstract: "Batch processing (ARJ: b) — not yet implemented",
-        discussion: "Write support for this command is planned for Stage 4 of development."
+        discussion: "Not implemented yet; the command exits with code 2."
     )
     @OptionGroup var options: ArchiveOperationOptions
     func run() throws { try runWriteStub(letter: "b", name: "batch", options: options) }
@@ -279,7 +319,7 @@ struct IntegrityStubCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "integrity",
         abstract: "Integrity/recovery (ARJ: i) — not yet implemented",
-        discussion: "Write support for this command is planned for Stage 4 of development."
+        discussion: "Not implemented yet; the command exits with code 2."
     )
     @OptionGroup var options: ArchiveOperationOptions
     func run() throws { try runWriteStub(letter: "i", name: "integrity", options: options) }
@@ -289,7 +329,7 @@ struct JoinStubCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "join",
         abstract: "Join split volumes (ARJ: j) — not yet implemented",
-        discussion: "Write support for this command is planned for Stage 4 of development."
+        discussion: "Not implemented yet; the command exits with code 2."
     )
     @OptionGroup var options: ArchiveOperationOptions
     func run() throws { try runWriteStub(letter: "j", name: "join", options: options) }
@@ -299,7 +339,7 @@ struct BackupStubCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "backup",
         abstract: "Backup cleanup (ARJ: k) — not yet implemented",
-        discussion: "Write support for this command is planned for Stage 4 of development."
+        discussion: "Not implemented yet; the command exits with code 2."
     )
     @OptionGroup var options: ArchiveOperationOptions
     func run() throws { try runWriteStub(letter: "k", name: "backup", options: options) }
@@ -309,7 +349,7 @@ struct RecoverStubCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "recover",
         abstract: "Recover corrupt archive (ARJ: q) — not yet implemented",
-        discussion: "Write support for this command is planned for Stage 4 of development."
+        discussion: "Not implemented yet; the command exits with code 2."
     )
     @OptionGroup var options: ArchiveOperationOptions
     func run() throws { try runWriteStub(letter: "q", name: "recover", options: options) }
@@ -319,7 +359,7 @@ struct CopyStubCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "copy",
         abstract: "Copy/verify archive (ARJ: y) — not yet implemented",
-        discussion: "Write support for this command is planned for Stage 4 of development."
+        discussion: "Not implemented yet; the command exits with code 2."
     )
     @OptionGroup var options: ArchiveOperationOptions
     func run() throws { try runWriteStub(letter: "y", name: "copy", options: options) }
@@ -329,7 +369,7 @@ struct AddChapterStubCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "add-chapter",
         abstract: "Add chapter/volume (ARJ: ac) — not yet implemented",
-        discussion: "Write support for this command is planned for Stage 4 of development."
+        discussion: "Not implemented yet; the command exits with code 2."
     )
     @OptionGroup var options: ArchiveOperationOptions
     func run() throws { try runWriteStub(letter: "ac", name: "add-chapter", options: options) }
@@ -339,7 +379,7 @@ struct ConvertChapterStubCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "convert-chapter",
         abstract: "Convert chapter/volume (ARJ: cc) — not yet implemented",
-        discussion: "Write support for this command is planned for Stage 4 of development."
+        discussion: "Not implemented yet; the command exits with code 2."
     )
     @OptionGroup var options: ArchiveOperationOptions
     func run() throws { try runWriteStub(letter: "cc", name: "convert-chapter", options: options) }
@@ -349,7 +389,7 @@ struct DeleteChapterStubCommand: ParsableCommand {
     static var configuration = CommandConfiguration(
         commandName: "delete-chapter",
         abstract: "Delete chapter/volume (ARJ: dc) — not yet implemented",
-        discussion: "Write support for this command is planned for Stage 4 of development."
+        discussion: "Not implemented yet; the command exits with code 2."
     )
     @OptionGroup var options: ArchiveOperationOptions
     func run() throws { try runWriteStub(letter: "dc", name: "delete-chapter", options: options) }

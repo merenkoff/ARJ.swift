@@ -1,129 +1,183 @@
 import Foundation
 
-struct ARJParsedEntry {
+/// A header exactly as stored: the basic header, its CRC and the chain of extended headers that follows it.
+struct ARJHeaderBlock: Sendable {
+    struct ExtendedHeader: Sendable {
+        let data: Data
+        let storedCRC: UInt32
+    }
+
+    /// Basic header bytes from `first_hdr_size` through the comment terminator (zero-based).
+    let basicHeader: Data
+    let storedCRC: UInt32
+    let extendedHeaders: [ExtendedHeader]
+
+    /// Length of the fixed part, clamped to the basic header size for malformed input.
+    var fixedSize: Int {
+        min(Int(basicHeader[0]), basicHeader.count)
+    }
+
+    /// Null-terminated name and comment that follow the fixed part.
+    var nameBytes: Data {
+        strings.first ?? Data()
+    }
+
+    var commentBytes: Data {
+        let parts = strings
+        return parts.count > 1 ? parts[1] : Data()
+    }
+
+    var hasValidCRCs: Bool {
+        CRC32.compute(basicHeader) == storedCRC
+            && extendedHeaders.allSatisfy { CRC32.compute($0.data) == $0.storedCRC }
+    }
+
+    private var strings: [Data] {
+        basicHeader.suffix(from: fixedSize)
+            .split(separator: 0, maxSplits: 2, omittingEmptySubsequences: false)
+            .map { Data($0) }
+    }
+}
+
+struct ARJParsedEntry: Sendable {
     let entry: ARJEntry
+    let header: ARJHeaderBlock
     let dataRange: Range<Int>
     let passwordModifier: UInt8
 }
 
-struct ARJArchiveInfo: Sendable, Equatable {
+struct ARJParsedMainHeader: Sendable {
+    /// Bytes preceding the main header, e.g. a self-extractor stub.
+    let prefixLength: Int
+    let header: ARJHeaderBlock
     let archiveName: String
     let comment: String?
+    let hostOS: ARJHostOS
+    let encryptionVersion: UInt8
 }
 
 struct ARJParser {
-    private static let headerID: UInt16 = 0xEA60
-    private static let firstHeaderMinSize = 30
-
     private let data: Data
     private var cursor: Int = 0
 
+    /// `data` must be zero-based (`startIndex == 0`).
     init(data: Data) {
         self.data = data
     }
 
-    mutating func parseEntries() throws -> [ARJEntry] {
-        try parseEntriesDetailed().map(\.entry)
+    /// Locates and parses the main header, leaving the cursor at the first file header.
+    mutating func parseMainHeader() throws -> ARJParsedMainHeader {
+        guard data.count >= 4 else { throw ARJError.unexpectedEOF }
+        cursor = Self.embeddedMainHeaderOffset(in: data) ?? 0
+        let prefixLength = cursor
+
+        guard try readUInt16() == ARJFormat.headerID else {
+            throw ARJError.invalidArchiveSignature
+        }
+        let basicHeaderSize = try readUInt16()
+        guard basicHeaderSize >= ARJFormat.minimumFirstHeaderSize,
+              basicHeaderSize <= ARJFormat.maximumBasicHeaderSize
+        else {
+            throw ARJError.invalidHeaderSize(basicHeaderSize)
+        }
+        cursor -= 4
+        guard let header = try readHeaderBlock() else {
+            throw ARJError.malformedHeader
+        }
+
+        let basic = header.basicHeader
+        guard Int(basic[ARJFormat.Offset.firstHeaderSize]) <= basic.count else {
+            throw ARJError.malformedHeader
+        }
+        let comment = ARJFormat.decodeString(header.commentBytes).flatMap { $0.isEmpty ? nil : $0 }
+        let encryptionVersion = header.fixedSize > ARJFormat.Offset.encryptionVersion
+            ? basic[ARJFormat.Offset.encryptionVersion]
+            : 0
+
+        return ARJParsedMainHeader(
+            prefixLength: prefixLength,
+            header: header,
+            archiveName: ARJFormat.decodeString(header.nameBytes) ?? "",
+            comment: comment,
+            hostOS: ARJHostOS(rawHostOS: basic[ARJFormat.Offset.hostOS]),
+            encryptionVersion: encryptionVersion
+        )
     }
 
-    mutating func parseArchiveInfo() throws -> ARJArchiveInfo {
-        guard data.count >= 4 else { throw ARJError.unexpectedEOF }
-        return try parseMainHeader()
-    }
-
-    mutating func parseEntriesDetailed() throws -> [ARJParsedEntry] {
-        guard data.count >= 4 else { throw ARJError.unexpectedEOF }
-        _ = try parseMainHeader()
-
+    /// Parses local file headers up to the end-of-archive marker. Call after `parseMainHeader()`.
+    mutating func parseEntries() throws -> [ARJParsedEntry] {
         var result: [ARJParsedEntry] = []
-        while true {
-            let marker = try readUInt16()
-            if marker != Self.headerID {
-                throw ARJError.invalidArchiveSignature
-            }
-
-            let basicHeaderSize = try readUInt16()
-            if basicHeaderSize == 0 {
-                break // End-of-archive marker.
-            }
-
-            let basicHeader = try readBytes(count: Int(basicHeaderSize))
-            _ = try readUInt32() // Header CRC (not validated yet).
-
-            let parsed = try decodeFileHeader(from: basicHeader)
-
-            let extraHeaderSize = try readUInt16()
-            if extraHeaderSize > 0 {
-                _ = try readBytes(count: Int(extraHeaderSize))
-                _ = try readUInt32() // Extended header CRC.
-            }
-
+        while let header = try readHeaderBlock() {
+            let decoded = try decodeFileHeader(header)
             let dataStart = cursor
-            let dataCount = Int(parsed.entry.compressedSize)
-            try advance(count: dataCount)
-            let dataEnd = cursor
+            try advance(count: Int(decoded.entry.compressedSize))
             result.append(
                 ARJParsedEntry(
-                    entry: parsed.entry,
-                    dataRange: dataStart..<dataEnd,
-                    passwordModifier: parsed.passwordModifier
+                    entry: decoded.entry,
+                    header: header,
+                    dataRange: dataStart..<cursor,
+                    passwordModifier: decoded.passwordModifier
                 )
             )
         }
-
         return result
     }
 
-    private mutating func parseMainHeader() throws -> ARJArchiveInfo {
-        let marker = try readUInt16()
-        guard marker == Self.headerID else {
-            throw ARJError.invalidArchiveSignature
+    /// Finds the main header of an archive embedded after a stub (self-extracting archives).
+    /// Returns `nil` when the data starts with a header ID or no valid main header is found.
+    static func embeddedMainHeaderOffset(in data: Data) -> Int? {
+        if data.count >= 2, data[0] == 0x60, data[1] == 0xEA {
+            return nil
         }
-
-        let basicHeaderSize = try readUInt16()
-        if basicHeaderSize == 0 || basicHeaderSize < Self.firstHeaderMinSize {
-            throw ARJError.invalidHeaderSize(basicHeaderSize)
-        }
-
-        let basicHeader = try readBytes(count: Int(basicHeaderSize))
-        _ = try readUInt32() // Header CRC (reserved for strict validation phase).
-
-        guard basicHeader.count >= Self.firstHeaderMinSize else {
-            throw ARJError.malformedHeader
-        }
-
-        let firstHeaderSize = Int(basicHeader[0])
-        guard firstHeaderSize <= basicHeader.count else {
-            throw ARJError.malformedHeader
-        }
-
-        let stringsData = basicHeader.suffix(from: firstHeaderSize)
-        let parts = stringsData.split(separator: 0, omittingEmptySubsequences: false)
-
-        let archiveName: String
-        if let first = parts.first, !first.isEmpty {
-            archiveName = decodeString(first) ?? ""
-        } else {
-            archiveName = ""
-        }
-
-        var comment: String? = nil
-        if parts.count >= 2 {
-            let second = parts[parts.index(parts.startIndex, offsetBy: 1)]
-            if !second.isEmpty {
-                if let decoded = decodeString(second), !decoded.isEmpty {
-                    comment = decoded
+        return data.withUnsafeBytes { raw -> Int? in
+            let bytes = raw.bindMemory(to: UInt8.self)
+            var offset = 0
+            while offset + 4 <= bytes.count {
+                defer { offset += 1 }
+                guard bytes[offset] == 0x60, bytes[offset + 1] == 0xEA else { continue }
+                let size = Int(bytes[offset + 2]) | (Int(bytes[offset + 3]) << 8)
+                let start = offset + 4
+                let end = start + size
+                guard size >= ARJFormat.minimumFirstHeaderSize,
+                      size <= ARJFormat.maximumBasicHeaderSize,
+                      end + 4 <= bytes.count,
+                      bytes[start + ARJFormat.Offset.fileType] == ARJFormat.FileType.mainHeader
+                else { continue }
+                let storedCRC = UInt32(bytes[end])
+                    | (UInt32(bytes[end + 1]) << 8)
+                    | (UInt32(bytes[end + 2]) << 16)
+                    | (UInt32(bytes[end + 3]) << 24)
+                if CRC32.compute(UnsafeBufferPointer(rebasing: bytes[start..<end])) == storedCRC {
+                    return offset
                 }
             }
+            return nil
         }
+    }
 
-        let extraHeaderSize = try readUInt16()
-        if extraHeaderSize > 0 {
-            _ = try readBytes(count: Int(extraHeaderSize))
-            _ = try readUInt32()
+    /// Reads one header block; returns `nil` at the end-of-archive marker.
+    private mutating func readHeaderBlock() throws -> ARJHeaderBlock? {
+        guard try readUInt16() == ARJFormat.headerID else {
+            throw ARJError.invalidArchiveSignature
         }
+        let basicHeaderSize = try readUInt16()
+        if basicHeaderSize == 0 {
+            return nil
+        }
+        guard basicHeaderSize <= ARJFormat.maximumBasicHeaderSize else {
+            throw ARJError.invalidHeaderSize(basicHeaderSize)
+        }
+        let basicHeader = try readBytes(count: Int(basicHeaderSize))
+        let storedCRC = try readUInt32()
 
-        return ARJArchiveInfo(archiveName: archiveName, comment: comment)
+        var extendedHeaders: [ARJHeaderBlock.ExtendedHeader] = []
+        while true {
+            let size = try readUInt16()
+            if size == 0 { break }
+            let extended = try readBytes(count: Int(size))
+            extendedHeaders.append(.init(data: extended, storedCRC: try readUInt32()))
+        }
+        return ARJHeaderBlock(basicHeader: basicHeader, storedCRC: storedCRC, extendedHeaders: extendedHeaders)
     }
 
     private struct DecodedFileHeader {
@@ -131,117 +185,45 @@ struct ARJParser {
         let passwordModifier: UInt8
     }
 
-    private func decodeFileHeader(from basicHeader: Data) throws -> DecodedFileHeader {
-        guard basicHeader.count >= Self.firstHeaderMinSize else {
+    private func decodeFileHeader(_ header: ARJHeaderBlock) throws -> DecodedFileHeader {
+        let basic = header.basicHeader
+        guard basic.count >= ARJFormat.minimumFirstHeaderSize,
+              Int(basic[ARJFormat.Offset.firstHeaderSize]) <= basic.count
+        else {
+            throw ARJError.malformedHeader
+        }
+        guard let name = ARJFormat.decodeString(header.nameBytes) else {
             throw ARJError.malformedHeader
         }
 
-        let firstHeaderSize = Int(basicHeader[0])
-        guard firstHeaderSize <= basicHeader.count else {
-            throw ARJError.malformedHeader
-        }
-
-        let flags = basicHeader[4]
-        let method = basicHeader[5]
-        let fileType = basicHeader[6]
-        let hostOSRaw = basicHeader[3]
-        let passwordModifier = basicHeader[7]
-
-        let rawTime = readLittleEndianUInt32(in: basicHeader, at: 0x08)
-        let compressedSize = readLittleEndianUInt32(in: basicHeader, at: 0x0C)
-        let originalSize = readLittleEndianUInt32(in: basicHeader, at: 0x10)
-        let crc32 = readLittleEndianUInt32(in: basicHeader, at: 0x14)
-
-        let stringsData = basicHeader.suffix(from: firstHeaderSize)
-        let parts = stringsData.split(separator: 0, omittingEmptySubsequences: false)
-        guard let first = parts.first else { throw ARJError.malformedHeader }
-        guard let name = decodeString(first) else { throw ARJError.malformedHeader }
-
-        let hostOS = ARJHostOS(rawHostOS: hostOSRaw)
-        let modified = decodeModifiedDate(rawTime: rawTime, hostOS: hostOS)
-        let isDirectory = fileType == 3 || name.hasSuffix("/") || name.hasSuffix("\\")
+        let flags = basic[ARJFormat.Offset.flags]
+        let fileType = basic[ARJFormat.Offset.fileType]
+        let hostOS = ARJHostOS(rawHostOS: basic[ARJFormat.Offset.hostOS])
+        let comment = ARJFormat.decodeString(header.commentBytes).flatMap { $0.isEmpty ? nil : $0 }
 
         let entry = ARJEntry(
             name: name,
-            compressedSize: compressedSize,
-            originalSize: originalSize,
-            compressionMethod: ARJCompressionMethod(rawMethod: method),
+            compressedSize: basic.littleEndianUInt32(at: ARJFormat.Offset.compressedSize),
+            originalSize: basic.littleEndianUInt32(at: ARJFormat.Offset.originalSize),
+            compressionMethod: ARJCompressionMethod(rawMethod: basic[ARJFormat.Offset.method]),
             fileType: fileType,
             hostOS: hostOS,
-            crc32: crc32,
-            isEncrypted: (flags & 0x01) != 0,
-            modified: modified,
-            isDirectory: isDirectory
+            crc32: basic.littleEndianUInt32(at: ARJFormat.Offset.fileCRC),
+            isEncrypted: (flags & ARJFormat.Flag.garbled) != 0,
+            modified: ARJTimestamp.decode(basic.littleEndianUInt32(at: ARJFormat.Offset.fileModified), hostOS: hostOS),
+            isDirectory: fileType == ARJFormat.FileType.directory || name.hasSuffix("/") || name.hasSuffix("\\"),
+            comment: comment,
+            fileMode: basic.littleEndianUInt16(at: ARJFormat.Offset.fileMode)
         )
-        return DecodedFileHeader(entry: entry, passwordModifier: passwordModifier)
-    }
-
-    private func decodeModifiedDate(rawTime: UInt32, hostOS: ARJHostOS) -> Date {
-        switch hostOS {
-        case .unix, .next:
-            return Date(timeIntervalSince1970: TimeInterval(rawTime))
-        default:
-            return decodeDOSDate(rawTime: rawTime)
-        }
-    }
-
-    private func decodeDOSDate(rawTime: UInt32) -> Date {
-        let timeBits = UInt32(rawTime & 0x0000_FFFF)
-        let dateBits = UInt32((rawTime >> 16) & 0x0000_FFFF)
-
-        let seconds = Int((timeBits & 0x1F) * 2)
-        let minutes = Int((timeBits >> 5) & 0x3F)
-        let hour = Int((timeBits >> 11) & 0x1F)
-        let day = Int(dateBits & 0x1F)
-        let month = Int((dateBits >> 5) & 0x0F)
-        let year = Int(((dateBits >> 9) & 0x7F) + 1980)
-
-        if rawTime == 0 {
-            return Date(timeIntervalSince1970: 0)
-        }
-
-        var components = DateComponents()
-        components.year = year
-        components.month = month == 0 ? 1 : month
-        components.day = day == 0 ? 1 : day
-        components.hour = hour
-        components.minute = minutes
-        components.second = seconds
-        components.timeZone = TimeZone(secondsFromGMT: 0)
-
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
-
-        return calendar.date(from: components) ?? Date(timeIntervalSince1970: 0)
-    }
-
-    private func decodeString<Bytes: Sequence>(_ bytes: Bytes) -> String? where Bytes.Element == UInt8 {
-        let data = Data(bytes)
-        if let utf8 = String(data: data, encoding: .utf8) {
-            return utf8
-        }
-        return String(data: data, encoding: .isoLatin1)
-    }
-
-    private func readLittleEndianUInt32(in data: Data, at offset: Int) -> UInt32 {
-        let b0 = UInt32(data[offset])
-        let b1 = UInt32(data[offset + 1]) << 8
-        let b2 = UInt32(data[offset + 2]) << 16
-        let b3 = UInt32(data[offset + 3]) << 24
-        return b0 | b1 | b2 | b3
+        return DecodedFileHeader(entry: entry, passwordModifier: basic[ARJFormat.Offset.passwordModifier])
     }
 
     private mutating func readUInt16() throws -> UInt16 {
-        let bytes = try readBytes(count: 2)
-        return UInt16(bytes[0]) | (UInt16(bytes[1]) << 8)
+        try readBytes(count: 2).littleEndianUInt16(at: 0)
     }
 
     private mutating func readUInt32() throws -> UInt32 {
-        let bytes = try readBytes(count: 4)
-        return UInt32(bytes[0])
-            | (UInt32(bytes[1]) << 8)
-            | (UInt32(bytes[2]) << 16)
-            | (UInt32(bytes[3]) << 24)
+        try readBytes(count: 4).littleEndianUInt32(at: 0)
     }
 
     private mutating func readBytes(count: Int) throws -> Data {

@@ -57,13 +57,13 @@ enum ARJDispatch {
             var cmd = try FreshenCommand.parseAsRoot(parseArguments)
             try cmd.run()
         case "move":
-            var cmd = try MoveStubCommand.parseAsRoot(parseArguments)
+            var cmd = try MoveCommand.parseAsRoot(parseArguments)
             try cmd.run()
         case "garble":
             var cmd = try GarbleStubCommand.parseAsRoot(parseArguments)
             try cmd.run()
         case "remove-paths":
-            var cmd = try RemovePathsStubCommand.parseAsRoot(parseArguments)
+            var cmd = try RemovePathsCommand.parseAsRoot(parseArguments)
             try cmd.run()
         case "rename":
             var cmd = try RenameStubCommand.parseAsRoot(parseArguments)
@@ -132,11 +132,11 @@ enum ARJDispatch {
         case "freshen":
             return FreshenCommand.helpMessage(for: FreshenCommand.self)
         case "move":
-            return MoveStubCommand.helpMessage(for: MoveStubCommand.self)
+            return MoveCommand.helpMessage(for: MoveCommand.self)
         case "garble":
             return GarbleStubCommand.helpMessage(for: GarbleStubCommand.self)
         case "remove-paths":
-            return RemovePathsStubCommand.helpMessage(for: RemovePathsStubCommand.self)
+            return RemovePathsCommand.helpMessage(for: RemovePathsCommand.self)
         case "rename":
             return RenameStubCommand.helpMessage(for: RenameStubCommand.self)
         case "order":
